@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Premium 360° property showcase for real estate traders. Explore immersive virtual tours of exclusive rental and sale properties.">
+  <title>Vista360 | Immersive Property Showcase</title>
+
+  <!-- Pannellum – 360° Photo Viewer -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css"/>
+
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/styles.css"/>
+</head>
+<body>
+
+  <!-- ==================== NAVIGATION ==================== -->
+  <nav class="navbar" id="navbar">
+    <div class="nav-container">
+      <div class="nav-logo">
+        <span class="logo-icon"><i class="fas fa-cube"></i></span>
+        <span class="logo-text">Vista<span class="gold">360</span></span>
+      </div>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#properties">Properties</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#agents">Agents</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+      <div class="nav-actions">
+        <button class="btn-outline" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'})">List Property</button>
+        <button class="hamburger" id="hamburger" aria-label="Toggle menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ==================== HERO ==================== -->
+  <section class="hero" id="hero">
+    <div class="hero-360-bg" id="heroPanorama"></div>
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+      <div class="hero-badge"><i class="fas fa-vr-cardboard"></i> Insta360 Immersive Tours</div>
+      <h1 class="hero-title">Experience Every<br><span class="gold">Corner</span> Before You Sign</h1>
+      <p class="hero-subtitle">South Africa's only platform where every listing comes with a full 360° photo AND video tour — captured with Insta360 cameras.</p>
+      <div class="hero-cta">
+        <button class="btn-primary" onclick="document.getElementById('properties').scrollIntoView({behavior:'smooth'})">
+          <i class="fas fa-search"></i> Explore Properties
+        </button>
+        <button class="btn-ghost" onclick="openModal('video-demo')">
+          <i class="fas fa-play-circle"></i> Watch How It Works
+        </button>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><span class="stat-num">120+</span><span class="stat-label">Active Listings</span></div>
+        <div class="stat-divider"></div>
+        <div class="stat"><span class="stat-num">100%</span><span class="stat-label">360° Captured</span></div>
+        <div class="stat-divider"></div>
+        <div class="stat"><span class="stat-num">4K</span><span class="stat-label">Insta360 Quality</span></div>
+      </div>
+    </div>
+    <div class="hero-scroll-hint"><i class="fas fa-chevron-down"></i></div>
+  </section>
+
+  <!-- ==================== FEATURED PROPERTIES ==================== -->
+  <section class="properties-section" id="properties">
+    <div class="section-header">
+      <p class="section-label">Premium Listings</p>
+      <h2 class="section-title">Featured <span class="gold">360° Properties</span></h2>
+      <p class="section-sub">Every listing captured with Insta360 X4 — drag to explore any room, any angle, any time.</p>
+    </div>
+
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="rental">Rental</button>
+      <button class="filter-btn" data-filter="sale">For Sale</button>
+      <button class="filter-btn" data-filter="commercial">Commercial</button>
+    </div>
+
+    <div class="properties-grid" id="propertiesGrid">
+      <!-- Injected by app.js -->
+    </div>
+  </section>
+
+  <!-- ==================== ABOUT / HOW IT WORKS ==================== -->
+  <section class="about-section" id="about">
+    <div class="about-grid">
+      <div class="about-text">
+        <p class="section-label">Why Vista360</p>
+        <h2 class="section-title">The Future of<br><span class="gold">Property Viewing</span></h2>
+        <p class="about-body">We equip every agent with an <strong>Insta360 X4 camera</strong> and capture every listing in full equirectangular 360° — both still panoramas and walkthrough videos. No travel, no scheduling nightmares.</p>
+        <div class="feature-list">
+          <div class="feature-item">
+            <div class="feature-icon"><i class="fas fa-camera-rotate"></i></div>
+            <div class="feature-text">
+              <h4>Insta360 X4 Capture</h4>
+              <p>Shot in 8K 360° resolution — every room, garden, view, and detail.</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon"><i class="fas fa-street-view"></i></div>
+            <div class="feature-text">
+              <h4>Interactive Photo Tours</h4>
+              <p>Drag, pan, zoom through equirectangular panoramas in your browser.</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon"><i class="fas fa-film"></i></div>
+            <div class="feature-text">
+              <h4>360° Walkthrough Video</h4>
+              <p>Watch a guided video tour — look left, right, up, down as it plays.</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon"><i class="fas fa-vr-cardboard"></i></div>
+            <div class="feature-text">
+              <h4>VR Headset Ready</h4>
+              <p>Compatible with Meta Quest, Cardboard, and WebXR devices.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="about-visual">
+        <div class="camera-card">
+          <div class="camera-icon-wrap"><i class="fas fa-camera"></i></div>
+          <h3>Insta360 X4</h3>
+          <p>8K 360° · 4K wide-angle · AI editing</p>
+          <div class="camera-specs">
+            <span><i class="fas fa-check"></i> 360° equirectangular output</span>
+            <span><i class="fas fa-check"></i> 4K/60fps video</span>
+            <span><i class="fas fa-check"></i> HDR photo mode</span>
+            <span><i class="fas fa-check"></i> FlowState stabilisation</span>
+            <span><i class="fas fa-check"></i> Waterproof &amp; dustproof</span>
+          </div>
+        </div>
+        <div class="floating-badge badge-left">
+          <i class="fas fa-star"></i> 360° Verified
+        </div>
+        <div class="floating-badge badge-right">
+          <i class="fas fa-bolt"></i> Live Tour
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== STATS BAR ==================== -->
+  <div class="stats-bar">
+    <div class="stats-inner">
+      <div class="stat-block"><span class="big-num" data-target="120">0</span><span>Listings</span></div>
+      <div class="stat-block"><span class="big-num" data-target="14">0</span><span>Cities</span></div>
+      <div class="stat-block"><span class="big-num" data-target="850">0</span><span>Happy Clients</span></div>
+      <div class="stat-block"><span class="big-num" data-target="8">0</span><span>Years Experience</span></div>
+    </div>
+  </div>
+
+  <!-- ==================== AGENTS ==================== -->
+  <section class="agents-section" id="agents">
+    <div class="section-header">
+      <p class="section-label">Our Team</p>
+      <h2 class="section-title">Meet Our <span class="gold">Specialist Agents</span></h2>
+    </div>
+    <div class="agents-grid">
+      <div class="agent-card">
+        <div class="agent-avatar" style="background:linear-gradient(135deg,#c9a227,#6b3fa0)">
+          <span>SK</span>
+        </div>
+        <h3>Sipho Khumalo</h3>
+        <p>Luxury Residential</p>
+        <div class="agent-stats"><span><i class="fas fa-home"></i> 48 listings</span><span><i class="fas fa-star"></i> 4.9</span></div>
+        <button class="btn-outline-sm" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'})">Contact</button>
+      </div>
+      <div class="agent-card featured-agent">
+        <div class="agent-badge">Top Agent</div>
+        <div class="agent-avatar" style="background:linear-gradient(135deg,#c9a227,#d45a1a)">
+          <span>NM</span>
+        </div>
+        <h3>Naledi Mokoena</h3>
+        <p>Commercial &amp; Industrial</p>
+        <div class="agent-stats"><span><i class="fas fa-home"></i> 67 listings</span><span><i class="fas fa-star"></i> 5.0</span></div>
+        <button class="btn-outline-sm" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'})">Contact</button>
+      </div>
+      <div class="agent-card">
+        <div class="agent-avatar" style="background:linear-gradient(135deg,#c9a227,#1a6b4a)">
+          <span>RV</span>
+        </div>
+        <h3>Ruan van Wyk</h3>
+        <p>Coastal &amp; Holiday</p>
+        <div class="agent-stats"><span><i class="fas fa-home"></i> 35 listings</span><span><i class="fas fa-star"></i> 4.8</span></div>
+        <button class="btn-outline-sm" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'})">Contact</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== TESTIMONIALS ==================== -->
+  <section class="testimonials-section">
+    <div class="section-header">
+      <p class="section-label">What Clients Say</p>
+      <h2 class="section-title">Trusted by <span class="gold">Traders &amp; Tenants</span></h2>
+    </div>
+    <div class="testimonials-grid">
+      <div class="testimonial-card">
+        <div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
+        <p>"We closed our Sandton deal without a single site visit. The 360° tour showed us everything — even the view from every window."</p>
+        <div class="testimonial-author">
+          <div class="author-avatar" style="background:#c9a227">TC</div>
+          <div><strong>Thabo Cele</strong><br><small>Property Investor, Johannesburg</small></div>
+        </div>
+      </div>
+      <div class="testimonial-card">
+        <div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
+        <p>"As a trader listing 12 units, Vista360's 360° capture service saved me weeks of showing. Tenants arrive already committed."</p>
+        <div class="testimonial-author">
+          <div class="author-avatar" style="background:#6b3fa0">LP</div>
+          <div><strong>Liesel Pretorius</strong><br><small>Portfolio Landlord, Cape Town</small></div>
+        </div>
+      </div>
+      <div class="testimonial-card">
+        <div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
+        <p>"The video walkthrough felt like I was actually there. I could look up at the ceilings, check the garden — it's remarkable."</p>
+        <div class="testimonial-author">
+          <div class="author-avatar" style="background:#1a6b4a">AN</div>
+          <div><strong>Amira Naidoo</strong><br><small>First-time Renter, Durban</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== CONTACT ==================== -->
+  <section class="contact-section" id="contact">
+    <div class="contact-grid">
+      <div class="contact-info">
+        <p class="section-label">Get In Touch</p>
+        <h2 class="section-title">List Your Property<br><span class="gold">With 360° Capture</span></h2>
+        <p>Our team will visit your property, capture it with an Insta360 X4, and have your listing live within 48 hours.</p>
+        <div class="contact-details">
+          <a href="tel:+27110000000" class="contact-link"><i class="fas fa-phone"></i> +27 11 000 0000</a>
+          <a href="mailto:listings@vista360.co.za" class="contact-link"><i class="fas fa-envelope"></i> listings@vista360.co.za</a>
+          <span class="contact-link"><i class="fas fa-map-marker-alt"></i> Sandton, Johannesburg</span>
+        </div>
+        <div class="social-links">
+          <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+          <a href="#" aria-label="Facebook"><i class="fab fa-facebook"></i></a>
+          <a href="#" aria-label="YouTube"><i class="fab fa-youtube"></i></a>
+          <a href="#" aria-label="LinkedIn"><i class="fab fa-linkedin"></i></a>
+        </div>
+      </div>
+      <form class="contact-form" id="contactForm" onsubmit="handleFormSubmit(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" placeholder="John Smith" required>
+          </div>
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" placeholder="john@example.com" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Phone Number</label>
+            <input type="tel" placeholder="+27 82 000 0000">
+          </div>
+          <div class="form-group">
+            <label>I am a</label>
+            <select>
+              <option>Property Trader / Investor</option>
+              <option>Landlord / Owner</option>
+              <option>Tenant / Buyer</option>
+              <option>Real Estate Agent</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Property Address</label>
+          <input type="text" placeholder="123 Main Street, Sandton...">
+        </div>
+        <div class="form-group">
+          <label>Message</label>
+          <textarea rows="4" placeholder="Tell us about your property or enquiry..."></textarea>
+        </div>
+        <button type="submit" class="btn-primary full-width">
+          <i class="fas fa-paper-plane"></i> Send Enquiry
+        </button>
+        <div class="form-success" id="formSuccess">
+          <i class="fas fa-check-circle"></i> Thank you! We'll be in touch within 24 hours.
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="footer">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <div class="nav-logo">
+          <span class="logo-icon"><i class="fas fa-cube"></i></span>
+          <span class="logo-text">Vista<span class="gold">360</span></span>
+        </div>
+        <p>South Africa's premier 360° property showcase platform. Every listing captured with Insta360 X4 technology.</p>
+      </div>
+      <div class="footer-links">
+        <h4>Properties</h4>
+        <ul>
+          <li><a href="#">Residential Rentals</a></li>
+          <li><a href="#">For Sale</a></li>
+          <li><a href="#">Commercial</a></li>
+          <li><a href="#">Holiday Lets</a></li>
+        </ul>
+      </div>
+      <div class="footer-links">
+        <h4>Services</h4>
+        <ul>
+          <li><a href="#">360° Capture</a></li>
+          <li><a href="#">Virtual Staging</a></li>
+          <li><a href="#">VR Tours</a></li>
+          <li><a href="#">Property Valuation</a></li>
+        </ul>
+      </div>
+      <div class="footer-links">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="#">Privacy Policy</a></li>
+          <li><a href="#">Terms of Service</a></li>
+          <li><a href="#">Cookie Policy</a></li>
+          <li><a href="#">POPIA Compliance</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2026 Vista360 Property Showcase. All rights reserved.</p>
+      <p>Powered by Insta360 X4 · Built for real estate traders</p>
+    </div>
+  </footer>
+
+  <!-- ==================== 360° VIEWER MODAL ==================== -->
+  <div class="modal-overlay" id="tourModal" onclick="closeTourModal(event)">
+    <div class="modal-container">
+      <button class="modal-close" onclick="closeTourModalDirect()"><i class="fas fa-times"></i></button>
+      <div class="modal-header">
+        <div class="modal-property-info">
+          <h2 id="modalTitle">Property Name</h2>
+          <p id="modalLocation"><i class="fas fa-map-marker-alt"></i> Location</p>
+        </div>
+        <div class="modal-price" id="modalPrice">R0/mo</div>
+      </div>
+      <div class="modal-tabs">
+        <button class="tab-btn active" id="photoTabBtn" onclick="switchTab('photo')">
+          <i class="fas fa-street-view"></i> 360° Photo Tour
+        </button>
+        <button class="tab-btn" id="videoTabBtn" onclick="switchTab('video')">
+          <i class="fas fa-film"></i> 360° Video Tour
+        </button>
+        <button class="tab-btn" id="detailsTabBtn" onclick="switchTab('details')">
+          <i class="fas fa-info-circle"></i> Details
+        </button>
+      </div>
+
+      <!-- Photo Tour Tab -->
+      <div class="tab-content active" id="photoTab">
+        <div class="viewer-hint"><i class="fas fa-hand-point-up"></i> Drag to look around · Scroll to zoom</div>
+        <div id="panoramaViewer" style="width:100%;height:480px;border-radius:0 0 8px 8px;"></div>
+        <div class="viewer-controls">
+          <button onclick="pannellumViewer && pannellumViewer.setPitch(0)"><i class="fas fa-compress-arrows-alt"></i> Reset View</button>
+          <button onclick="pannellumViewer && pannellumViewer.toggleFullscreen()"><i class="fas fa-expand"></i> Fullscreen</button>
+        </div>
+      </div>
+
+      <!-- Video Tour Tab -->
+      <div class="tab-content" id="videoTab">
+        <div class="video360-container" id="video360Container">
+          <div class="video360-placeholder" id="videoPlaceholder">
+            <div class="vp-icon"><i class="fas fa-vr-cardboard"></i></div>
+            <h3>360° Video Tour</h3>
+            <p>This viewer plays equirectangular 360° MP4 videos captured with Insta360 X4.</p>
+            <p class="vp-note">To use: place your Insta360 video file at <code>videos/property-X-360.mp4</code> and update the <code>video360</code> path in <code>js/app.js</code>.</p>
+            <div class="vp-hint"><i class="fas fa-info-circle"></i> A-Frame WebVR — drag to look around while video plays</div>
+            <a-scene id="aframeScene" embedded style="height:0;width:0;visibility:hidden">
+              <a-assets>
+                <video id="tour360video" loop crossorigin="anonymous" playsinline webkit-playsinline></video>
+              </a-assets>
+              <a-videosphere src="#tour360video" rotation="0 -90 0"></a-videosphere>
+              <a-camera wasd-controls-enabled="false"></a-camera>
+            </a-scene>
+          </div>
+        </div>
+        <div class="video-controls" id="videoControls" style="display:none">
+          <button id="playPauseBtn" onclick="toggleVideo()"><i class="fas fa-play"></i></button>
+          <div class="video-progress"><div class="video-bar" id="videoBar"></div></div>
+          <button onclick="toggleVideoFS()"><i class="fas fa-expand"></i></button>
+        </div>
+        <div class="viewer-hint">Drag inside the video to look in any direction · Full 360°</div>
+      </div>
+
+      <!-- Details Tab -->
+      <div class="tab-content" id="detailsTab">
+        <div class="property-details-grid">
+          <div class="detail-col">
+            <h3>Property Overview</h3>
+            <div class="detail-item"><i class="fas fa-bed"></i><span id="detailBeds">-</span></div>
+            <div class="detail-item"><i class="fas fa-bath"></i><span id="detailBaths">-</span></div>
+            <div class="detail-item"><i class="fas fa-ruler-combined"></i><span id="detailSqft">-</span></div>
+            <div class="detail-item"><i class="fas fa-car"></i><span id="detailParking">-</span></div>
+            <div class="detail-item"><i class="fas fa-tag"></i><span id="detailType">-</span></div>
+            <div class="detail-item"><i class="fas fa-calendar"></i><span id="detailAvail">-</span></div>
+          </div>
+          <div class="detail-col">
+            <h3>Description</h3>
+            <p id="detailDesc" class="detail-desc"></p>
+            <h3>Amenities</h3>
+            <div class="amenities-list" id="detailAmenities"></div>
+          </div>
+        </div>
+        <div class="cta-row">
+          <button class="btn-primary" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'});closeTourModalDirect()">
+            <i class="fas fa-calendar-check"></i> Book a Viewing
+          </button>
+          <button class="btn-outline" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'});closeTourModalDirect()">
+            <i class="fas fa-envelope"></i> Enquire Now
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video Demo Modal -->
+  <div class="modal-overlay" id="videoDemoModal" onclick="closeVideoDemo(event)">
+    <div class="video-demo-container">
+      <button class="modal-close" onclick="document.getElementById('videoDemoModal').classList.remove('active')"><i class="fas fa-times"></i></button>
+      <div class="demo-content">
+        <h2><i class="fas fa-vr-cardboard gold"></i> How 360° Tours Work</h2>
+        <div class="demo-steps">
+          <div class="demo-step">
+            <div class="step-num">1</div>
+            <div class="step-text"><strong>Insta360 X4 Capture</strong> — Agent visits property, captures all rooms in 8K 360°</div>
+          </div>
+          <div class="demo-step">
+            <div class="step-num">2</div>
+            <div class="step-text"><strong>Processing</strong> — Equirectangular photos and videos processed via Insta360 Studio</div>
+          </div>
+          <div class="demo-step">
+            <div class="step-num">3</div>
+            <div class="step-text"><strong>Published</strong> — Photo tour (Pannellum) and video tour (A-Frame WebVR) go live</div>
+          </div>
+          <div class="demo-step">
+            <div class="step-num">4</div>
+            <div class="step-text"><strong>You Explore</strong> — Drag, zoom, and immerse from any device, anywhere</div>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="document.getElementById('properties').scrollIntoView({behavior:'smooth'});document.getElementById('videoDemoModal').classList.remove('active')">
+          <i class="fas fa-search"></i> Browse Properties
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

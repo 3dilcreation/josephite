@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "3DIL Creation",
+    "slug": "3dil-creation-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#FF6B35"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "plugins": ["expo-font", "expo-camera", "expo-notifications"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "in.dilcreation.app3d",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera is used for AR preview of 3D products",
+        "NSPhotoLibraryUsageDescription": "Access photos for uploading reference images"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FF6B35"
+      },
+      "package": "in.dilcreation.app3d",
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", "VIBRATE", "RECEIVE_BOOT_COMPLETED"]
+    },
+    "web": { "favicon": "./assets/favicon.png" }
+  }
+}

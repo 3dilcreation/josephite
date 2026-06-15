@@ -8,12 +8,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 interface ProgressBarProps {
   /** 0–100 */
   progress: number;
-  /** Gradient start color */
+  /** Gradient start color — defaults to accent green */
   colorStart?: string;
   /** Gradient end color */
   colorEnd?: string;
   height?: number;
   showLabel?: boolean;
+  /** Override label text (default: "XX%") */
   labelText?: string;
   animated?: boolean;
   style?: ViewStyle;
@@ -35,7 +36,7 @@ export function ProgressBar({
 }: ProgressBarProps) {
   const clampedProgress = Math.min(100, Math.max(0, progress));
   const animatedWidth = useRef(new Animated.Value(0)).current;
-  const radius = borderRadius ?? height / 2;
+  const radius = borderRadius ?? Math.ceil(height / 2);
 
   useEffect(() => {
     if (animated) {

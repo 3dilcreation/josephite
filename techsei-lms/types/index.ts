@@ -65,6 +65,7 @@ export interface Course {
   duration_hours: number;
   created_by: string;
   created_at: string;
+  published?: boolean;
   modules?: Module[];
 }
 

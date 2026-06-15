@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Course } from '../../stores/courseStore';
+import type { Course } from '../../types';
 import { ProgressBar } from './ProgressBar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -39,6 +39,7 @@ interface CourseCardProps {
   style?: ViewStyle;
 }
 
+// ── Star Rating ───────────────────────────────────────────────────────────────
 function StarRating({ rating }: { rating: number }) {
   const stars = [];
   const fullStars = Math.floor(rating);
@@ -56,10 +57,12 @@ function StarRating({ rating }: { rating: number }) {
   return <View style={styles.starsRow}>{stars}</View>;
 }
 
+// ── Price / Tier Badge ────────────────────────────────────────────────────────
 function PriceTag({ isPremium }: { isPremium: boolean }) {
   if (isPremium) {
     return (
       <View style={styles.proBadge}>
+        <Ionicons name="star" size={9} color="#000" />
         <Text style={styles.proBadgeText}>PRO</Text>
       </View>
     );
@@ -71,7 +74,21 @@ function PriceTag({ isPremium }: { isPremium: boolean }) {
   );
 }
 
-// ── Grid variant ─────────────────────────────────────────────────────────────
+// ── Thumbnail Placeholder ─────────────────────────────────────────────────────
+function ThumbnailPlaceholder({ size }: { size: 'small' | 'large' }) {
+  return (
+    <LinearGradient
+      colors={['#6C63FF', '#A855F7']}
+      style={StyleSheet.absoluteFill}
+    >
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name="book" size={size === 'large' ? 60 : 32} color="#FFFFFF30" />
+      </View>
+    </LinearGradient>
+  );
+}
+
+// ── Grid Variant ──────────────────────────────────────────────────────────────
 function GridCard({ course, onPress, enrollmentProgress }: CourseCardProps) {
   const cardWidth = (SCREEN_WIDTH - 48) / 2;
   return (
@@ -82,14 +99,15 @@ function GridCard({ course, onPress, enrollmentProgress }: CourseCardProps) {
     >
       <View style={styles.gridThumbnailContainer}>
         {course.thumbnail_url ? (
-          <Image source={{ uri: course.thumbnail_url }} style={styles.gridThumbnail} />
-        ) : (
-          <LinearGradient
-            colors={['#6C63FF', '#A855F7']}
+          <Image
+            source={{ uri: course.thumbnail_url }}
             style={styles.gridThumbnail}
-          >
-            <Ionicons name="book" size={32} color="#FFFFFF60" />
-          </LinearGradient>
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.gridThumbnail}>
+            <ThumbnailPlaceholder size="small" />
+          </View>
         )}
         <View style={styles.thumbnailBadge}>
           <PriceTag isPremium={course.is_premium} />
@@ -106,9 +124,24 @@ function GridCard({ course, onPress, enrollmentProgress }: CourseCardProps) {
           <StarRating rating={course.rating} />
           <Text style={styles.ratingText}> {course.rating.toFixed(1)}</Text>
         </View>
+        <View style={styles.gridStats}>
+          <View style={styles.statChip}>
+            <Ionicons name="time-outline" size={10} color={COLORS.textMuted} />
+            <Text style={styles.statChipText}>{course.duration_hours}h</Text>
+          </View>
+          <View style={styles.statChip}>
+            <Ionicons name="people-outline" size={10} color={COLORS.textMuted} />
+            <Text style={styles.statChipText}>{formatStudentCount(course.total_students)}</Text>
+          </View>
+        </View>
         {enrollmentProgress !== undefined && (
-          <View style={{ marginTop: 6 }}>
-            <ProgressBar progress={enrollmentProgress} height={4} colorStart="#43E97B" colorEnd="#38F9D7" />
+          <View style={{ marginTop: 8 }}>
+            <ProgressBar
+              progress={enrollmentProgress}
+              height={4}
+              colorStart="#43E97B"
+              colorEnd="#38F9D7"
+            />
           </View>
         )}
       </View>
@@ -116,20 +149,21 @@ function GridCard({ course, onPress, enrollmentProgress }: CourseCardProps) {
   );
 }
 
-// ── Horizontal variant ───────────────────────────────────────────────────────
+// ── Horizontal Variant ────────────────────────────────────────────────────────
 function HorizontalCard({ course, onPress, enrollmentProgress }: CourseCardProps) {
   return (
     <TouchableOpacity onPress={onPress} style={styles.horizontalCard} activeOpacity={0.85}>
       <View style={styles.horizontalThumbnailContainer}>
         {course.thumbnail_url ? (
-          <Image source={{ uri: course.thumbnail_url }} style={styles.horizontalThumbnail} />
-        ) : (
-          <LinearGradient
-            colors={['#6C63FF', '#A855F7']}
+          <Image
+            source={{ uri: course.thumbnail_url }}
             style={styles.horizontalThumbnail}
-          >
-            <Ionicons name="book" size={28} color="#FFFFFF60" />
-          </LinearGradient>
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.horizontalThumbnail}>
+            <ThumbnailPlaceholder size="small" />
+          </View>
         )}
         <View style={styles.thumbnailBadgeSmall}>
           <PriceTag isPremium={course.is_premium} />
@@ -153,10 +187,19 @@ function HorizontalCard({ course, onPress, enrollmentProgress }: CourseCardProps
             <Ionicons name="time-outline" size={11} color={COLORS.textMuted} />
             <Text style={styles.statChipText}>{course.duration_hours}h</Text>
           </View>
+          <View style={styles.statChip}>
+            <Ionicons name="layers-outline" size={11} color={COLORS.textMuted} />
+            <Text style={styles.statChipText}>Course</Text>
+          </View>
         </View>
         {enrollmentProgress !== undefined && (
           <View style={{ marginTop: 6 }}>
-            <ProgressBar progress={enrollmentProgress} height={4} colorStart="#43E97B" colorEnd="#38F9D7" />
+            <ProgressBar
+              progress={enrollmentProgress}
+              height={4}
+              colorStart="#43E97B"
+              colorEnd="#38F9D7"
+            />
           </View>
         )}
       </View>
@@ -164,22 +207,23 @@ function HorizontalCard({ course, onPress, enrollmentProgress }: CourseCardProps
   );
 }
 
-// ── Featured variant ─────────────────────────────────────────────────────────
+// ── Featured Variant ──────────────────────────────────────────────────────────
 function FeaturedCard({ course, onPress, enrollmentProgress }: CourseCardProps) {
   return (
     <TouchableOpacity onPress={onPress} style={styles.featuredCard} activeOpacity={0.88}>
-      {course.thumbnail_url ? (
-        <Image source={{ uri: course.thumbnail_url }} style={styles.featuredThumbnail} />
-      ) : (
-        <LinearGradient
-          colors={['#6C63FF', '#A855F7', '#EC4899']}
-          style={styles.featuredThumbnail}
-        >
-          <Ionicons name="book" size={60} color="#FFFFFF30" />
-        </LinearGradient>
-      )}
+      <View style={StyleSheet.absoluteFill}>
+        {course.thumbnail_url ? (
+          <Image
+            source={{ uri: course.thumbnail_url }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+        ) : (
+          <ThumbnailPlaceholder size="large" />
+        )}
+      </View>
       <LinearGradient
-        colors={['transparent', 'rgba(10,10,26,0.95)']}
+        colors={['transparent', 'rgba(10,10,26,0.85)', 'rgba(10,10,26,0.98)']}
         style={styles.featuredOverlay}
       >
         <View style={styles.featuredContent}>
@@ -193,17 +237,30 @@ function FeaturedCard({ course, onPress, enrollmentProgress }: CourseCardProps) 
             {course.title}
           </Text>
           <Text style={styles.featuredInstructor} numberOfLines={1}>
-            {course.instructor_name ?? 'TechSei Instructor'}
+            by {course.instructor_name ?? 'TechSei Instructor'}
           </Text>
-          <View style={styles.ratingRow}>
-            <StarRating rating={course.rating} />
-            <Text style={styles.ratingText}> {course.rating.toFixed(1)}</Text>
-            <Text style={styles.dotSeparator}> · </Text>
-            <Text style={styles.ratingText}>{formatStudentCount(course.total_students)} students</Text>
+          <View style={styles.featuredMeta}>
+            <View style={styles.ratingRow}>
+              <StarRating rating={course.rating} />
+              <Text style={styles.ratingText}> {course.rating.toFixed(1)}</Text>
+              <Text style={styles.dotSeparator}> · </Text>
+              <Text style={styles.ratingText}>{formatStudentCount(course.total_students)} students</Text>
+            </View>
+            <View style={styles.durationChip}>
+              <Ionicons name="time-outline" size={12} color={COLORS.textMuted} />
+              <Text style={styles.statChipText}>{course.duration_hours}h</Text>
+            </View>
           </View>
           {enrollmentProgress !== undefined && (
-            <View style={{ marginTop: 8 }}>
-              <ProgressBar progress={enrollmentProgress} height={5} colorStart="#43E97B" colorEnd="#38F9D7" />
+            <View style={{ marginTop: 10 }}>
+              <ProgressBar
+                progress={enrollmentProgress}
+                height={5}
+                colorStart="#43E97B"
+                colorEnd="#38F9D7"
+                showLabel
+                labelText={`${Math.round(enrollmentProgress)}% complete`}
+              />
             </View>
           )}
         </View>
@@ -212,18 +269,24 @@ function FeaturedCard({ course, onPress, enrollmentProgress }: CourseCardProps) 
   );
 }
 
-// ── Main export ──────────────────────────────────────────────────────────────
-export function CourseCard({ course, onPress, variant = 'grid', enrollmentProgress, style }: CourseCardProps) {
+// ── Main Export ───────────────────────────────────────────────────────────────
+export function CourseCard({
+  course,
+  onPress,
+  variant = 'grid',
+  enrollmentProgress,
+  style,
+}: CourseCardProps) {
   const props = { course, onPress, variant, enrollmentProgress };
-
   if (variant === 'featured') return <FeaturedCard {...props} />;
   if (variant === 'horizontal') return <HorizontalCard {...props} />;
   return <GridCard {...props} />;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function formatStudentCount(count: number): string {
-  if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
   return String(count);
 }
 
@@ -231,9 +294,9 @@ function formatCategory(cat: string): string {
   return cat.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  // Grid
+  // ── Grid ──
   gridCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 16,
@@ -241,16 +304,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
   gridThumbnailContainer: {
     position: 'relative',
+    height: 120,
+    overflow: 'hidden',
   },
   gridThumbnail: {
     width: '100%',
-    height: 110,
-    alignItems: 'center',
-    justifyContent: 'center',
-    resizeMode: 'cover',
+    height: '100%',
   },
   thumbnailBadge: {
     position: 'absolute',
@@ -263,7 +330,7 @@ const styles = StyleSheet.create({
     right: 6,
   },
   gridBody: {
-    padding: 10,
+    padding: 12,
   },
   gridTitle: {
     color: COLORS.text,
@@ -272,7 +339,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 4,
   },
-  // Horizontal
+  gridStats: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
+  },
+
+  // ── Horizontal ──
   horizontalCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 16,
@@ -280,18 +353,22 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.border,
-    width: 280,
+    width: 290,
     marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
   horizontalThumbnailContainer: {
     position: 'relative',
+    width: 100,
+    overflow: 'hidden',
   },
   horizontalThumbnail: {
-    width: 95,
+    width: 100,
     height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    resizeMode: 'cover',
   },
   horizontalBody: {
     flex: 1,
@@ -303,22 +380,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
-    marginBottom: 3,
+    marginBottom: 4,
   },
-  // Featured
+
+  // ── Featured ──
   featuredCard: {
     borderRadius: 20,
     overflow: 'hidden',
-    height: 200,
+    height: 220,
     position: 'relative',
     borderWidth: 1,
     borderColor: COLORS.border,
-  },
-  featuredThumbnail: {
-    ...StyleSheet.absoluteFillObject,
-    resizeMode: 'cover',
-    alignItems: 'center',
-    justifyContent: 'center',
+    shadowColor: '#6C63FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
   featuredOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -342,13 +419,28 @@ const styles = StyleSheet.create({
   featuredInstructor: {
     color: COLORS.textMuted,
     fontSize: 13,
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  // Shared
+  featuredMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  durationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+
+  // ── Shared ──
   instructorText: {
     color: COLORS.textMuted,
     fontSize: 11,
-    marginBottom: 5,
+    marginBottom: 6,
   },
   ratingRow: {
     flexDirection: 'row',
@@ -370,7 +462,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     marginTop: 6,
-    gap: 8,
+    gap: 6,
   },
   statChip: {
     flexDirection: 'row',
@@ -386,12 +478,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
   },
-  // Badges
+
+  // ── Badges ──
   proBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     backgroundColor: COLORS.gold,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
+    shadowColor: COLORS.gold,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 4,
   },
   proBadgeText: {
     color: '#000',
@@ -412,15 +513,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   categoryChip: {
-    backgroundColor: 'rgba(108,99,255,0.3)',
+    backgroundColor: 'rgba(108,99,255,0.25)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(108,99,255,0.5)',
+    borderColor: 'rgba(108,99,255,0.4)',
   },
   categoryChipText: {
-    color: COLORS.primary,
+    color: '#A5A0FF',
     fontSize: 10,
     fontWeight: '700',
   },

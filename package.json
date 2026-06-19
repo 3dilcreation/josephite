@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
-    "oauth": "node scripts/oauth-setup.js"
+    "oauth": "node scripts/oauth-setup.js",
+    "webhooks": "node scripts/register-shopify-webhooks.js"
   },
   "dependencies": {
     "axios": "^1.6.8",

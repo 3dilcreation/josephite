@@ -71,7 +71,7 @@ async function createJobEvent(order) {
   };
 
   const response = await calendar.events.insert({
-    calendarId: process.env.GOOGLE_CALENDAR_ID ?? 'primary',
+    calendarId: process.env.GOOGLE_CALENDAR_ID ?? '3dilcreation@gmail.com',
     resource: event,
     sendUpdates: 'none',
   });

@@ -1,6 +1,7 @@
 const calendarService = require('./calendarService');
 const emailService = require('./emailService');
 const jobSheetGenerator = require('./jobSheetGenerator');
+const whatsappService = require('./whatsappService');
 const parser = require('../utils/messageParser');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -95,13 +96,22 @@ async function processShopifyOrder(shopifyOrder) {
 async function processWhatsAppMessage(message, contact, _metadata) {
   const text = message.text?.body ?? message.interactive?.body?.text ?? '';
   const parsed = parser.parse(text);
+  const fromPhone = message.from;
+  const customerName = parsed.name ?? contact?.profile?.name ?? `+${fromPhone}`;
+
+  // If the message is too short / vague, ask for more info instead of creating a bare order
+  const isOrderIntent = parsed.serviceType !== 'default' || parsed.email || text.length > 30;
+  if (!isOrderIntent) {
+    await whatsappService.sendInfoRequest(fromPhone, customerName);
+    return null;
+  }
 
   const order = {
     jobNumber: generateJobNumber(),
     source: 'whatsapp',
-    customerName: parsed.name ?? contact?.profile?.name ?? `+${message.from}`,
+    customerName,
     customerEmail: parsed.email,
-    customerPhone: parsed.phone ?? message.from,
+    customerPhone: parsed.phone ?? fromPhone,
     serviceType: parsed.serviceType,
     complexity: parsed.complexity,
     notes: text,
@@ -109,7 +119,12 @@ async function processWhatsAppMessage(message, contact, _metadata) {
     amount: parsed.amount ?? 'TBD',
   };
 
-  return processOrder(order);
+  const result = await processOrder(order);
+
+  // Send WhatsApp acknowledgement reply
+  await whatsappService.sendReply(fromPhone, result);
+
+  return result;
 }
 
 async function processInstagramMessage(messaging) {

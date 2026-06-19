@@ -1,0 +1,117 @@
+{
+  "expo": {
+    "name": "TechSei",
+    "slug": "techsei-lms",
+    "scheme": "techsei",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.techsei.lms",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "TechSei needs camera access to capture your profile photo.",
+        "NSPhotoLibraryUsageDescription": "TechSei needs photo library access to upload your profile photo.",
+        "NSMicrophoneUsageDescription": "TechSei needs microphone access for interactive lessons.",
+        "UIBackgroundModes": ["fetch", "remote-notification"]
+      },
+      "associatedDomains": ["applinks:techsei.app"]
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F172A"
+      },
+      "package": "com.techsei.lms",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECORD_AUDIO",
+        "INTERNET",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ],
+      "googleServicesFile": "./google-services.json",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "techsei.app",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#6366F1",
+          "defaultChannel": "default",
+          "sounds": ["./assets/notification.wav"]
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.techsei.lms",
+          "enableGooglePay": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TechSei needs access to your photos to upload a profile picture.",
+          "cameraPermission": "TechSei needs access to your camera to take a profile picture."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "TechSei needs microphone access for interactive lessons."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "techsei-lms-project-id"
+      }
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/techsei-lms-project-id"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
+  }
+}

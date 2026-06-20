@@ -1,7 +1,9 @@
 const calendarService = require('./calendarService');
 const emailService = require('./emailService');
+const driveService = require('./driveService');
 const jobSheetGenerator = require('./jobSheetGenerator');
 const whatsappService = require('./whatsappService');
+const instagramService = require('./instagramService');
 const parser = require('../utils/messageParser');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -40,20 +42,33 @@ async function processOrder(order) {
   order.deadline = calcDeadline(order.serviceType, order.complexity || 'standard');
   console.log(`[${order.jobNumber}] Processing ${order.source} order for "${order.customerName}" — deadline ${order.deadline.toDateString()}`);
 
-  const [calEvent] = await Promise.all([
-    calendarService.createJobEvent(order),
-  ]);
+  // 1. Create calendar event (parallel-safe, doesn't need HTML yet)
+  const calEvent = await calendarService.createJobEvent(order);
   order.calendarLink = calEvent?.htmlLink;
 
+  // 2. Generate HTML job sheet
   const jobSheetHtml = jobSheetGenerator.generate(order);
 
-  // Send to customer if we have their email
+  // 3. Save to Google Drive → get PDF buffer + view link
+  try {
+    const drive = await driveService.saveJobSheet(order, jobSheetHtml);
+    order.driveLink = drive.viewLink;
+    order.pdfBuffer = drive.pdfBuffer;
+  } catch (err) {
+    // Drive failure is non-fatal — email still sends without PDF
+    console.warn(`Drive upload skipped for ${order.jobNumber}:`, err.message);
+  }
+
+  // 4. Email job sheet + PDF attachment to customer (if email known)
   if (order.customerEmail) {
     await emailService.sendJobSheet(order, jobSheetHtml);
   }
 
-  // Always notify the business owner
+  // 5. Always notify the business owner
   await emailService.sendOwnerNotification(order, jobSheetHtml);
+
+  // Strip large buffer before returning (not needed outside this fn)
+  delete order.pdfBuffer;
 
   return order;
 }
@@ -130,11 +145,20 @@ async function processWhatsAppMessage(message, contact, _metadata) {
 async function processInstagramMessage(messaging) {
   const text = messaging.message?.text ?? '';
   const parsed = parser.parse(text);
+  const senderId = messaging.sender?.id;
+  const customerName = parsed.name ?? `Instagram ${senderId}`;
+
+  // Vague DM → ask for more info
+  const isOrderIntent = parsed.serviceType !== 'default' || parsed.email || text.length > 30;
+  if (!isOrderIntent) {
+    await instagramService.sendInfoRequest(senderId);
+    return null;
+  }
 
   const order = {
     jobNumber: generateJobNumber(),
     source: 'instagram',
-    customerName: parsed.name ?? `Instagram ${messaging.sender?.id}`,
+    customerName,
     customerEmail: parsed.email,
     customerPhone: parsed.phone,
     serviceType: parsed.serviceType,
@@ -142,10 +166,15 @@ async function processInstagramMessage(messaging) {
     notes: text,
     address: parsed.address ?? '',
     amount: parsed.amount ?? 'TBD',
-    instagramSenderId: messaging.sender?.id,
+    instagramSenderId: senderId,
   };
 
-  return processOrder(order);
+  const result = await processOrder(order);
+
+  // Send Instagram DM acknowledgement
+  await instagramService.sendReply(senderId, result);
+
+  return result;
 }
 
 async function processManualOrder(data) {

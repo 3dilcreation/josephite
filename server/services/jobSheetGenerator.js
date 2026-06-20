@@ -144,6 +144,9 @@ function generate(order) {
     </ul>
   </div>
 
+  <!-- Drive link injected here by emailService after Drive upload -->
+  <!-- DRIVE_LINK_PLACEHOLDER -->
+
   <!-- Footer -->
   <div style="background:#1a1a2e;padding:20px 40px;text-align:center;">
     <div style="font-size:14px;color:#fff;">Thank you for choosing <strong style="color:#c9a227;">3Dil Creation</strong></div>

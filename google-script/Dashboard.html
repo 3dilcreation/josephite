@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Attendance Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --brand:   #4F46E5;
+      --green:   #10B981;
+      --amber:   #F59E0B;
+      --red:     #EF4444;
+      --blue:    #3B82F6;
+      --bg:      #F1F5F9;
+      --card:    #FFFFFF;
+      --text:    #1E293B;
+      --muted:   #64748B;
+      --border:  #E2E8F0;
+      --radius:  12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+      color: #fff; padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px; position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 12px rgba(79,70,229,.35);
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .logo { width: 38px; height: 38px; background: rgba(255,255,255,.18); border-radius: 10px;
+            display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .header h1 { font-size: 16px; font-weight: 700; }
+    .header p  { font-size: 11px; opacity: .75; margin-top: 2px; }
+    .live-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; opacity: .9; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #34D399;
+                animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.85)} }
+
+    /* ── Layout ── */
+    .page { max-width: 1280px; margin: 0 auto; padding: 20px 16px; }
+    .toolbar { background: var(--card); border-radius: var(--radius); padding: 14px 16px;
+               display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
+               margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+    .field input, .field select {
+      border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px;
+      font-size: 13px; color: var(--text); outline: none; height: 36px;
+      font-family: inherit; transition: border .2s;
+    }
+    .field input:focus, .field select:focus { border-color: var(--brand); }
+    .btn { height: 36px; padding: 0 14px; border: none; border-radius: 8px;
+           font-size: 13px; font-weight: 500; cursor: pointer; transition: opacity .15s; }
+    .btn:hover { opacity: .88; }
+    .btn-primary  { background: var(--brand); color: #fff; }
+    .btn-ghost    { background: var(--bg); color: var(--muted); }
+    .btn-green    { background: var(--green); color: #fff; }
+    .btn-sm { height: 30px; padding: 0 10px; font-size: 12px; }
+    .ml-auto { margin-left: auto; }
+
+    /* ── Stat Cards ── */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    @media(max-width:700px){ .stats{ grid-template-columns: repeat(2,1fr); } }
+    .stat-card {
+      border-radius: var(--radius); padding: 16px 18px; color: #fff;
+      box-shadow: 0 4px 16px rgba(0,0,0,.12); position: relative; overflow: hidden;
+    }
+    .stat-card::after { content:''; position:absolute; top:-20px; right:-20px;
+      width:80px; height:80px; border-radius:50%; background:rgba(255,255,255,.12); }
+    .stat-card .val { font-size: 32px; font-weight: 700; line-height: 1; }
+    .stat-card .lbl { font-size: 12px; opacity: .85; margin-top: 4px; }
+    .stat-card .ico { position:absolute; top:14px; right:16px; font-size:22px; opacity:.6; }
+    .sc-present { background: linear-gradient(135deg,#10B981,#34D399); }
+    .sc-late    { background: linear-gradient(135deg,#F59E0B,#FCD34D); }
+    .sc-absent  { background: linear-gradient(135deg,#EF4444,#FCA5A5); }
+    .sc-total   { background: linear-gradient(135deg,#3B82F6,#93C5FD); }
+
+    /* ── Main grid ── */
+    .grid2 { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
+    @media(max-width:900px){ .grid2{ grid-template-columns:1fr; } }
+
+    /* ── Table Card ── */
+    .card { background: var(--card); border-radius: var(--radius);
+            box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+    .card-header { padding: 14px 18px; border-bottom: 1px solid var(--border);
+                   display: flex; align-items: center; justify-content: space-between; }
+    .card-title { font-size: 14px; font-weight: 600; }
+    .card-sub   { font-size: 12px; color: var(--muted); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600;
+         color: var(--muted); background: #F8FAFC; text-transform: uppercase; letter-spacing: .5px;
+         border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #F8FAFC; }
+    .empty-state { text-align:center; padding: 40px; color: var(--muted); font-size: 14px; }
+    .empty-state span { display:block; font-size:32px; margin-bottom:8px; }
+
+    /* ── Badges ── */
+    .badge { display:inline-flex; align-items:center; gap:4px; font-size:11px;
+             font-weight:600; padding:2px 8px; border-radius:20px; white-space:nowrap; }
+    .b-in    { background:#D1FAE5; color:#065F46; }
+    .b-out   { background:#DBEAFE; color:#1E40AF; }
+    .b-abs   { background:#FEE2E2; color:#991B1B; }
+    .b-unk   { background:#F3F4F6; color:#374151; }
+    .b-late  { background:#FEF3C7; color:#92400E; }
+    .b-ot    { background:#EDE9FE; color:#5B21B6; }
+
+    /* ── Sidebar ── */
+    .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Live Feed ── */
+    .feed-list { max-height: 280px; overflow-y: auto; }
+    .feed-item { display:flex; align-items:flex-start; gap:10px; padding:10px 16px;
+                 border-bottom:1px solid var(--border); }
+    .feed-item:last-child { border-bottom:none; }
+    .feed-dot { width:8px; height:8px; border-radius:50%; margin-top:5px; flex-shrink:0; }
+    .fd-in  { background:var(--green); }
+    .fd-out { background:var(--blue); }
+    .fd-abs { background:var(--red); }
+    .feed-name { font-size:13px; font-weight:500; }
+    .feed-meta { font-size:11px; color:var(--muted); margin-top:1px; }
+
+    /* ── Chart ── */
+    .chart-wrap { padding: 16px; }
+
+    /* ── Weekly Bar ── */
+    .weekly-wrap { padding:16px; }
+
+    /* ── Toast ── */
+    #toast { position:fixed; bottom:20px; right:20px; background:#1E293B; color:#fff;
+             padding:10px 18px; border-radius:10px; font-size:13px; box-shadow:0 4px 16px rgba(0,0,0,.2);
+             display:none; z-index:9999; animation:slidein .25s ease; }
+    @keyframes slidein{ from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+    /* ── Loader ── */
+    .loader { display:inline-block; width:16px; height:16px; border:2px solid var(--border);
+              border-top-color:var(--brand); border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes spin{ to{transform:rotate(360deg)} }
+
+    /* ── Time ── */
+    #clockDisplay { font-size:13px; font-weight:600; letter-spacing:.5px; }
+  </style>
+</head>
+<body>
+
+<!-- ══ Header ══ -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">📡</div>
+    <div>
+      <h1>Smart Attendance System</h1>
+      <p>RFID · Google Sheets · Real-time Dashboard</p>
+    </div>
+  </div>
+  <div class="live-badge">
+    <span class="live-dot"></span>
+    <span id="clockDisplay">--:--:--</span>
+  </div>
+</header>
+
+<!-- ══ Page ══ -->
+<div class="page">
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="field">
+      <label>Date</label>
+      <input type="date" id="filterDate">
+    </div>
+    <div class="field">
+      <label>Search Name</label>
+      <input type="text" id="filterName" placeholder="e.g. John" style="width:160px">
+    </div>
+    <div class="field">
+      <label>Department</label>
+      <input type="text" id="filterDept" placeholder="e.g. IT" style="width:130px">
+    </div>
+    <button class="btn btn-primary" onclick="loadRecords()">Filter</button>
+    <button class="btn btn-ghost"   onclick="clearFilters()">Clear</button>
+    <button class="btn btn-green"   onclick="exportData()">⬇ Export CSV</button>
+    <div class="ml-auto">
+      <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshBtn">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- Stat Cards -->
+  <div class="stats">
+    <div class="stat-card sc-present">
+      <div class="ico">✅</div>
+      <div class="val" id="sPresent">—</div>
+      <div class="lbl">Present Today</div>
+    </div>
+    <div class="stat-card sc-late">
+      <div class="ico">⏰</div>
+      <div class="val" id="sLate">—</div>
+      <div class="lbl">Late Arrivals</div>
+    </div>
+    <div class="stat-card sc-absent">
+      <div class="ico">❌</div>
+      <div class="val" id="sAbsent">—</div>
+      <div class="lbl">Absent Today</div>
+    </div>
+    <div class="stat-card sc-total">
+      <div class="ico">🔢</div>
+      <div class="val" id="sCheckouts">—</div>
+      <div class="lbl">Check-Outs Today</div>
+    </div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="grid2">
+
+    <!-- Records Table -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Attendance Records</div>
+          <div class="card-sub" id="recCount">Loading…</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Name</th>
+              <th>Department</th>
+              <th>Action</th>
+              <th>Status</th>
+              <th>Hours</th>
+              <th>Device</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="7" class="empty-state">
+              <span>⏳</span>Loading records…
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+      <!-- Live Feed -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Live Feed</div>
+          <span class="live-dot" style="width:8px;height:8px;border-radius:50%;background:#34D399;animation:pulse 1.5s infinite"></span>
+        </div>
+        <div class="feed-list" id="liveFeed">
+          <div class="empty-state"><span>📭</span>No activity yet</div>
+        </div>
+      </div>
+
+      <!-- Donut Chart -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">Today's Breakdown</div></div>
+        <div class="chart-wrap">
+          <canvas id="donutChart" height="200"></canvas>
+        </div>
+      </div>
+
+      <!-- Weekly Bar -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">7-Day Trend</div></div>
+        <div class="weekly-wrap">
+          <canvas id="barChart" height="180"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const BASE = window.location.href.split('?')[0];
+  let donut = null, bar = null;
+  let allRecords = [];
+  let refreshTimer = null;
+
+  // ── Init ────────────────────────────────────────────────────
+  window.addEventListener('DOMContentLoaded', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById('filterDate').value = today;
+    refreshAll();
+    startClock();
+    refreshTimer = setInterval(refreshAll, 30000); // 30-second auto-refresh
+  });
+
+  function startClock() {
+    setInterval(() => {
+      document.getElementById('clockDisplay').textContent =
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }, 1000);
+  }
+
+  function refreshAll() {
+    loadStats();
+    loadRecords();
+  }
+
+  // ── Stats ────────────────────────────────────────────────────
+  function loadStats() {
+    fetch(BASE + '?action=getStats')
+      .then(r => r.json())
+      .then(d => {
+        if (d.status !== 'success') return;
+        document.getElementById('sPresent').textContent   = d.present;
+        document.getElementById('sLate').textContent      = d.late;
+        document.getElementById('sAbsent').textContent    = d.absent;
+        document.getElementById('sCheckouts').textContent = d.checkOuts;
+        renderFeed(d.recentActivity || []);
+        renderDonut(d.present - d.late, d.late, d.absent);
+        renderBar(d.weeklyTrend || []);
+      })
+      .catch(e => console.error('Stats fetch error', e));
+  }
+
+  // ── Records ─────────────────────────────────────────────────
+  function loadRecords() {
+    const date = document.getElementById('filterDate').value;
+    const name = document.getElementById('filterName').value;
+    const dept = document.getElementById('filterDept').value;
+
+    let url = BASE + '?action=getData&limit=300';
+    if (date) url += '&date=' + date;
+    if (name) url += '&name=' + encodeURIComponent(name);
+    if (dept) url += '&dept=' + encodeURIComponent(dept);
+
+    document.getElementById('tableBody').innerHTML =
+      '<tr><td colspan="7" class="empty-state"><span class="loader"></span></td></tr>';
+
+    fetch(url)
+      .then(r => r.json())
+      .then(d => {
+        if (d.status !== 'success') throw new Error(d.message);
+        allRecords = d.data || [];
+        renderTable(allRecords);
+      })
+      .catch(e => {
+        toast('Error loading records: ' + e.message);
+        document.getElementById('tableBody').innerHTML =
+          '<tr><td colspan="7" class="empty-state"><span>⚠️</span>Failed to load</td></tr>';
+      });
+  }
+
+  // ── Table render ────────────────────────────────────────────
+  function renderTable(rows) {
+    const tbody = document.getElementById('tableBody');
+    document.getElementById('recCount').textContent = rows.length + ' records';
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><span>🗂️</span>No records found</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map(r => {
+      const time  = r.timestamp ? r.timestamp.split(' ')[1].slice(0,5) : '--';
+      const badge = actionBadge(r.action, r.late);
+      const hours = r.hoursWorked ? r.hoursWorked + ' h' : '—';
+      const late  = r.late === 'YES' ? '<span class="badge b-late">LATE</span>' : '';
+      return `<tr>
+        <td style="white-space:nowrap;color:var(--muted)">${time}</td>
+        <td style="font-weight:500">${esc(r.name || 'Unknown')}</td>
+        <td style="color:var(--muted);font-size:12px">${esc(r.department || '')}</td>
+        <td>${badge} ${late}</td>
+        <td><span style="font-size:12px;color:var(--muted)">${esc(r.statusNote || '')}</span></td>
+        <td style="color:var(--muted)">${hours}</td>
+        <td style="font-size:11px;color:var(--muted)">${esc(r.device || '')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function actionBadge(action, late) {
+    if (action === 'CHECK_IN')  return '<span class="badge b-in">▲ IN</span>';
+    if (action === 'CHECK_OUT') return '<span class="badge b-out">▼ OUT</span>';
+    if (action === 'ABSENT')    return '<span class="badge b-abs">✗ ABSENT</span>';
+    return `<span class="badge b-unk">${action}</span>`;
+  }
+
+  // ── Live Feed ────────────────────────────────────────────────
+  function renderFeed(items) {
+    const el = document.getElementById('liveFeed');
+    if (!items.length) {
+      el.innerHTML = '<div class="empty-state"><span>📭</span>No activity today</div>';
+      return;
+    }
+    el.innerHTML = items.map(a => {
+      const dot = a.action === 'CHECK_IN' ? 'fd-in' : a.action === 'CHECK_OUT' ? 'fd-out' : 'fd-abs';
+      const lbl = a.action === 'CHECK_IN' ? 'Checked in' : a.action === 'CHECK_OUT' ? 'Checked out' : 'Absent';
+      const late = a.late === 'YES' ? ' · <span style="color:#F59E0B;font-size:10px">LATE</span>' : '';
+      return `<div class="feed-item">
+        <div class="feed-dot ${dot}"></div>
+        <div>
+          <div class="feed-name">${esc(a.name)}</div>
+          <div class="feed-meta">${lbl} at ${a.time}${late}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Charts ───────────────────────────────────────────────────
+  function renderDonut(onTime, late, absent) {
+    const ctx = document.getElementById('donutChart').getContext('2d');
+    if (donut) donut.destroy();
+    donut = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['On Time', 'Late', 'Absent'],
+        datasets: [{ data: [onTime, late, absent],
+          backgroundColor: ['#10B981','#F59E0B','#EF4444'],
+          borderWidth: 0, hoverOffset: 6 }]
+      },
+      options: {
+        cutout: '65%', responsive: true,
+        plugins: {
+          legend: { position: 'bottom', labels: { usePointStyle: true, font: { size: 11 }, padding: 12 } }
+        }
+      }
+    });
+  }
+
+  function renderBar(trend) {
+    const ctx = document.getElementById('barChart').getContext('2d');
+    if (bar) bar.destroy();
+    if (!trend.length) return;
+    bar = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: trend.map(t => t.date),
+        datasets: [
+          { label: 'Present', data: trend.map(t => t.present),
+            backgroundColor: '#A7F3D0', borderRadius: 4 },
+          { label: 'Late',    data: trend.map(t => t.late),
+            backgroundColor: '#FDE68A', borderRadius: 4 },
+          { label: 'Absent',  data: trend.map(t => t.absent),
+            backgroundColor: '#FECACA', borderRadius: 4 },
+        ]
+      },
+      options: {
+        responsive: true, scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+          y: { stacked: true, beginAtZero: true, ticks: { font: { size: 10 }, stepSize: 1 } },
+        },
+        plugins: { legend: { labels: { font: { size: 11 }, usePointStyle: true } } }
+      }
+    });
+  }
+
+  // ── Filters ──────────────────────────────────────────────────
+  function clearFilters() {
+    document.getElementById('filterName').value = '';
+    document.getElementById('filterDept').value = '';
+    document.getElementById('filterDate').value = new Date().toISOString().slice(0,10);
+    loadRecords();
+  }
+
+  // ── Export ───────────────────────────────────────────────────
+  function exportData() {
+    const date = document.getElementById('filterDate').value;
+    const url  = BASE + '?action=export' + (date ? '&date=' + date : '');
+    window.open(url, '_blank');
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 3500);
+  }
+</script>
+</body>
+</html>

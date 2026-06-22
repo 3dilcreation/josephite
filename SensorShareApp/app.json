@@ -1,0 +1,76 @@
+{
+  "expo": {
+    "name": "SensorShare",
+    "slug": "sensor-share",
+    "version": "1.0.0",
+    "scheme": "sensorshare",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0E1A"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sensorsshare.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SensorShare uses the camera to stream live video to the Master device.",
+        "NSMicrophoneUsageDescription": "SensorShare uses the microphone for audio streaming.",
+        "NSLocationWhenInUseUsageDescription": "SensorShare uses GPS to share location data.",
+        "NSLocationAlwaysUsageDescription": "SensorShare uses GPS in background for continuous tracking.",
+        "NSMotionUsageDescription": "SensorShare uses motion sensors (accelerometer, gyroscope).",
+        "NSBluetoothAlwaysUsageDescription": "SensorShare uses Bluetooth to connect with nearby devices.",
+        "NSBluetoothPeripheralUsageDescription": "SensorShare uses Bluetooth LE for device pairing."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0E1A"
+      },
+      "package": "com.sensorsshare.app",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "BODY_SENSORS",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_ADVERTISE",
+        "ACCESS_WIFI_STATE",
+        "CHANGE_WIFI_STATE",
+        "INTERNET",
+        "VIBRATE",
+        "ACTIVITY_RECOGNITION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      "expo-location",
+      "expo-sensors",
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["peripheral", "central"],
+          "bluetoothAlwaysPermission": "Allow SensorShare to use Bluetooth"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

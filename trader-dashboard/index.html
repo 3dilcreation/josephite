@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apex Terminal — Trader Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">▲</div>
+        <span class="brand-name">APEX</span>
+      </div>
+      <nav class="nav">
+        <a class="nav-item active" data-view="markets" href="#"><span class="ico">◈</span>Markets</a>
+        <a class="nav-item" data-view="portfolio" href="#"><span class="ico">◷</span>Portfolio</a>
+        <a class="nav-item" data-view="orders" href="#"><span class="ico">⇄</span>Orders</a>
+        <a class="nav-item" data-view="watchlist" href="#"><span class="ico">★</span>Watchlist</a>
+        <a class="nav-item" data-view="analytics" href="#"><span class="ico">∿</span>Analytics</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="conn"><span class="dot live"></span><span id="connLabel">Live feed</span></div>
+        <div class="muted small">Simulated market data</div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="ticker-strip" id="tickerStrip"></div>
+        <div class="topbar-right">
+          <div class="balance">
+            <span class="muted small">Equity</span>
+            <strong id="equityValue">$0.00</strong>
+          </div>
+          <div class="clock" id="clock">--:--:--</div>
+        </div>
+      </header>
+
+      <!-- KPI row -->
+      <section class="kpis">
+        <div class="kpi card">
+          <span class="kpi-label">Portfolio Value</span>
+          <span class="kpi-value" id="kpiValue">$0</span>
+          <span class="kpi-delta" id="kpiValueDelta">—</span>
+        </div>
+        <div class="kpi card">
+          <span class="kpi-label">Today's P&amp;L</span>
+          <span class="kpi-value" id="kpiPnl">$0</span>
+          <span class="kpi-delta" id="kpiPnlDelta">—</span>
+        </div>
+        <div class="kpi card">
+          <span class="kpi-label">Buying Power</span>
+          <span class="kpi-value" id="kpiBuyingPower">$0</span>
+          <span class="kpi-delta muted" id="kpiCashNote">Cash available</span>
+        </div>
+        <div class="kpi card">
+          <span class="kpi-label">Open Positions</span>
+          <span class="kpi-value" id="kpiPositions">0</span>
+          <span class="kpi-delta muted" id="kpiExposure">$0 exposure</span>
+        </div>
+      </section>
+
+      <!-- Trading grid -->
+      <section class="grid">
+        <!-- Chart panel -->
+        <div class="panel chart-panel card">
+          <div class="panel-head">
+            <div class="symbol-block">
+              <h2 id="symName">—</h2>
+              <span class="muted small" id="symFull">—</span>
+            </div>
+            <div class="symbol-price">
+              <strong id="symPrice">$0.00</strong>
+              <span id="symChange" class="chg">—</span>
+            </div>
+            <div class="timeframes" id="timeframes">
+              <button data-tf="1m">1m</button>
+              <button data-tf="5m" class="active">5m</button>
+              <button data-tf="15m">15m</button>
+              <button data-tf="1h">1h</button>
+              <button data-tf="1d">1d</button>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="priceChart"></canvas>
+            <div class="chart-meta" id="chartMeta"></div>
+          </div>
+          <div class="chart-stats" id="chartStats"></div>
+        </div>
+
+        <!-- Order ticket -->
+        <div class="panel ticket-panel card">
+          <div class="ticket-tabs">
+            <button class="buy active" data-side="buy">Buy</button>
+            <button class="sell" data-side="sell">Sell</button>
+          </div>
+          <div class="ticket-body">
+            <label class="field">
+              <span>Order type</span>
+              <select id="orderType">
+                <option value="market">Market</option>
+                <option value="limit">Limit</option>
+                <option value="stop">Stop</option>
+              </select>
+            </label>
+            <label class="field" id="limitField" style="display:none;">
+              <span>Limit price</span>
+              <input id="limitPrice" type="number" step="0.01" />
+            </label>
+            <label class="field">
+              <span>Quantity</span>
+              <input id="qty" type="number" min="0" step="0.0001" value="1" />
+            </label>
+            <div class="qty-pills" id="qtyPills">
+              <button data-pct="25">25%</button>
+              <button data-pct="50">50%</button>
+              <button data-pct="75">75%</button>
+              <button data-pct="100">Max</button>
+            </div>
+            <div class="ticket-summary">
+              <div class="row"><span class="muted">Est. cost</span><strong id="estCost">$0.00</strong></div>
+              <div class="row"><span class="muted">Fee (0.1%)</span><span id="estFee">$0.00</span></div>
+              <div class="row total"><span>Total</span><strong id="estTotal">$0.00</strong></div>
+            </div>
+            <button class="submit-order buy" id="submitOrder">Buy <span id="submitSym"></span></button>
+            <div class="ticket-msg" id="ticketMsg"></div>
+          </div>
+        </div>
+
+        <!-- Watchlist -->
+        <div class="panel watch-panel card">
+          <div class="panel-head sm"><h3>Watchlist</h3><span class="muted small">Click to load</span></div>
+          <div class="watch-list" id="watchList"></div>
+        </div>
+
+        <!-- Order book -->
+        <div class="panel book-panel card">
+          <div class="panel-head sm"><h3>Order Book</h3><span class="muted small" id="spreadLabel">—</span></div>
+          <div class="book" id="orderBook"></div>
+        </div>
+
+        <!-- Positions -->
+        <div class="panel positions-panel card">
+          <div class="panel-head sm"><h3>Positions &amp; Orders</h3></div>
+          <table class="ptable">
+            <thead>
+              <tr><th>Symbol</th><th>Side</th><th class="num">Qty</th><th class="num">Avg</th><th class="num">Last</th><th class="num">Mkt Value</th><th class="num">P&amp;L</th><th></th></tr>
+            </thead>
+            <tbody id="positionsBody"></tbody>
+          </table>
+          <div class="empty" id="positionsEmpty" style="display:none;">No open positions. Place an order to get started.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+# =============================================================================
+# Tech SEI — content source configuration
+# =============================================================================
+# Add, remove, or re-categorise sources here. Each category becomes a section
+# of the blog. RSS/Atom feeds are polled directly; the special "arxiv" source
+# pulls the latest research papers via the arXiv API.
+# =============================================================================
+
+site:
+  title: "Tech SEI"
+  tagline: "Current tech news, the latest innovations, and tomorrow's research."
+  base_url: "/"            # set to your domain path when deploying
+  author: "Tech SEI"
+  posts_per_run: 8         # max number of articles generated per build
+  output_dir: "site"       # where the generated static site is written
+
+# How posts are written:
+#   ai        -> use the Claude API to write original articles (needs ANTHROPIC_API_KEY)
+#   extractive -> build posts from feed summaries, no API needed (default fallback)
+#   auto      -> use ai when an API key is present, otherwise extractive
+generation:
+  mode: "auto"
+  model: "claude-opus-4-8"
+  max_tokens: 1200
+
+categories:
+  - name: "Tech News"
+    slug: "news"
+    description: "What's happening in technology right now."
+    feeds:
+      - https://feeds.arstechnica.com/arstechnica/index
+      - https://www.theverge.com/rss/index.xml
+      - https://techcrunch.com/feed/
+      - https://www.wired.com/feed/rss
+
+  - name: "Latest Innovations"
+    slug: "innovations"
+    description: "New products, breakthroughs, and emerging tools."
+    feeds:
+      - https://www.technologyreview.com/feed/
+      - https://spectrum.ieee.org/rss/fulltext
+      - https://hnrss.org/frontpage?points=200
+
+  - name: "Future Research"
+    slug: "research"
+    description: "Papers and ideas shaping the next decade."
+    feeds:
+      # arxiv:<category> pulls recent submissions from the arXiv API.
+      - arxiv:cs.AI
+      - arxiv:cs.LG
+      - arxiv:cs.CL
+      - arxiv:quant-ph

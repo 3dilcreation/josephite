@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ site.title }}{% endblock %}</title>
+  <meta name="description" content="{{ site.tagline }}">
+  <link rel="stylesheet" href="{{ ('../' if subpage else '') }}static/style.css">
+  <link rel="alternate" type="application/rss+xml" title="{{ site.title }}" href="{{ ('../' if subpage else '') }}feed.xml">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="{{ ('../' if subpage else '') }}index.html">{{ site.title }}</a>
+      <p class="tagline">{{ site.tagline }}</p>
+    </div>
+  </header>
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Built automatically by Tech SEI v{{ version }} · {{ site.author }}</p>
+    </div>
+  </footer>
+</body>
+</html>

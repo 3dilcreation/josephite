@@ -1,0 +1,11 @@
+# Core dependencies for the Tech SEI blog automation engine
+feedparser>=6.0.10      # RSS/Atom feed parsing for news sources
+requests>=2.31.0        # HTTP client for APIs (arXiv, fallback fetching)
+PyYAML>=6.0             # Reading the feeds/config file
+Jinja2>=3.1.2           # HTML templating for the static blog site
+python-dateutil>=2.8.2  # Robust date parsing across feed formats
+
+# Optional: enables AI-written posts via the Claude API.
+# The engine works without it (extractive summaries), but installing
+# this unlocks higher-quality, original article generation.
+anthropic>=0.40.0

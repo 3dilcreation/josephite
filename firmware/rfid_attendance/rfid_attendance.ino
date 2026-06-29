@@ -58,6 +58,24 @@ int           offlineCount = 0;
 
 const char* DAYS[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
 
+// LCD content tracking (sent to GAS on every heartbeat)
+char g_lcdRow0[17]     = "                ";
+char g_lcdRow1[17]     = "                ";
+
+// Runtime time thresholds (defaults match config.h; overridden by fetchSettings)
+int g_openHour     = OPEN_HOUR;
+int g_openMin      = OPEN_MIN;
+int g_lateHour     = LATE_HOUR;
+int g_lateMin      = LATE_MIN;
+int g_closeHour    = CLOSE_HOUR;
+int g_closeMin     = CLOSE_MIN;
+int g_earlyOutHour = EARLY_OUT_HOUR;
+int g_earlyOutMin  = EARLY_OUT_MIN;
+int g_overtimeHour = OVERTIME_HOUR;
+int g_overtimeMin  = OVERTIME_MIN;
+String        g_settingsVersion = "";
+unsigned long lastHeartbeatMs   = 0;
+
 
 // ════════════════════════════════════════════════════════════════
 //  1. BUZZER — ONLY check-in and check-out confirmations
@@ -87,6 +105,8 @@ void beepOut() {
 // ════════════════════════════════════════════════════════════════
 
 void lcdMsg(const char* top, const char* bot) {
+  strncpy(g_lcdRow0, top, 16); g_lcdRow0[16] = '\0';
+  strncpy(g_lcdRow1, bot, 16); g_lcdRow1[16] = '\0';
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print(top);
   lcd.setCursor(0, 1); lcd.print(bot);
@@ -105,22 +125,26 @@ void updateClock() {
   } else {
     const char* wifi = wifiOk ? "[WiFi]" : "[OFLN]";
     int cur = now.hour() * 60 + now.minute();
-    if (cur < OPEN_HOUR * 60 + OPEN_MIN) {
+    if (cur < g_openHour * 60 + g_openMin) {
       snprintf(row1, sizeof(row1), "%s TooEarly ", wifi);
-    } else if (cur >= CLOSE_HOUR * 60 + CLOSE_MIN) {
+    } else if (cur >= g_closeHour * 60 + g_closeMin) {
       snprintf(row1, sizeof(row1), "%s Closed   ", wifi);
-    } else if (cur >= LATE_HOUR * 60 + LATE_MIN) {
+    } else if (cur >= g_lateHour * 60 + g_lateMin) {
       snprintf(row1, sizeof(row1), "%s LATE Scan", wifi);
     } else {
       snprintf(row1, sizeof(row1), "%s Scan Card", wifi);
     }
   }
 
+  strncpy(g_lcdRow0, row0, 16); g_lcdRow0[16] = '\0';
+  strncpy(g_lcdRow1, row1, 16); g_lcdRow1[16] = '\0';
   lcd.setCursor(0, 0); lcd.print(row0);
   lcd.setCursor(0, 1); lcd.print(row1);
 }
 
 void showResult(const char* line0, const char* line1, int holdMs) {
+  strncpy(g_lcdRow0, line0, 16); g_lcdRow0[16] = '\0';
+  strncpy(g_lcdRow1, line1, 16); g_lcdRow1[16] = '\0';
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print(line0);
   lcd.setCursor(0, 1); lcd.print(line1);
@@ -230,12 +254,12 @@ String getCheckInTime(const String& uid) {
 String determineStatus(bool isIn, int h, int m) {
   int cur = h * 60 + m;
   if (isIn) {
-    if (cur <  OPEN_HOUR * 60 + OPEN_MIN)  return "EARLY_ARR";
-    if (cur >= LATE_HOUR * 60 + LATE_MIN)  return "LATE";
+    if (cur <  g_openHour * 60 + g_openMin)  return "EARLY_ARR";
+    if (cur >= g_lateHour * 60 + g_lateMin)  return "LATE";
     return "ON_TIME";
   } else {
-    if (cur >= OVERTIME_HOUR  * 60 + OVERTIME_MIN)   return "OVERTIME";
-    if (cur <  EARLY_OUT_HOUR * 60 + EARLY_OUT_MIN)  return "EARLY_DEP";
+    if (cur >= g_overtimeHour * 60 + g_overtimeMin)  return "OVERTIME";
+    if (cur <  g_earlyOutHour * 60 + g_earlyOutMin)  return "EARLY_DEP";
     return "ON_TIME";
   }
 }
@@ -322,7 +346,61 @@ String pushAdminScan(const String& uid) {
 
 
 // ════════════════════════════════════════════════════════════════
-//  10. UPLOAD OFFLINE QUEUE (called when WiFi restores)
+//  10. SETTINGS FETCH & HEARTBEAT
+// ════════════════════════════════════════════════════════════════
+
+void fetchSettings() {
+  if (!wifiOk) return;
+  String body = httpGet(String(GAS_URL) + "?action=getSettings");
+  if (body.isEmpty()) return;
+
+  StaticJsonDocument<512> doc;
+  if (deserializeJson(doc, body) != DeserializationError::Ok) return;
+  if (!(doc["ok"] | false)) return;
+
+  g_openHour     = doc["openHour"]     | g_openHour;
+  g_openMin      = doc["openMin"]      | g_openMin;
+  g_lateHour     = doc["lateHour"]     | g_lateHour;
+  g_lateMin      = doc["lateMin"]      | g_lateMin;
+  g_closeHour    = doc["closeHour"]    | g_closeHour;
+  g_closeMin     = doc["closeMin"]     | g_closeMin;
+  g_earlyOutHour = doc["earlyOutHour"] | g_earlyOutHour;
+  g_earlyOutMin  = doc["earlyOutMin"]  | g_earlyOutMin;
+  g_overtimeHour = doc["overtimeHour"] | g_overtimeHour;
+  g_overtimeMin  = doc["overtimeMin"]  | g_overtimeMin;
+  g_settingsVersion = String(doc["version"] | "0");
+
+  Serial.printf("[Settings] v%s open=%02d:%02d late=%02d:%02d close=%02d:%02d\n",
+    g_settingsVersion.c_str(),
+    g_openHour, g_openMin, g_lateHour, g_lateMin,
+    g_closeHour, g_closeMin);
+}
+
+void sendHeartbeat() {
+  if (!wifiOk) return;
+  String url = String(GAS_URL) +
+    "?action=heartbeat" +
+    "&row0=" + urlEncode(String(g_lcdRow0)) +
+    "&row1=" + urlEncode(String(g_lcdRow1)) +
+    "&wifi=" + (wifiOk ? "1" : "0") +
+    "&queue=" + String(offlineCount) +
+    "&mode=" + (adminMode ? "admin" : "normal");
+  String body = httpGet(url);
+  if (body.isEmpty()) return;
+
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, body) != DeserializationError::Ok) return;
+  String remoteVer = String(doc["settingsVersion"] | "0");
+  if (remoteVer != "0" && remoteVer != g_settingsVersion) {
+    Serial.printf("[Heartbeat] Settings changed remote v%s → re-fetching\n", remoteVer.c_str());
+    fetchSettings();
+    updateClock();
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  11. UPLOAD OFFLINE QUEUE (called when WiFi restores)
 // ════════════════════════════════════════════════════════════════
 
 void uploadOffline() {
@@ -390,7 +468,7 @@ void uploadOffline() {
 
 
 // ════════════════════════════════════════════════════════════════
-//  11. RFID UID READER
+//  12. RFID UID READER
 // ════════════════════════════════════════════════════════════════
 
 String readUID() {
@@ -405,7 +483,7 @@ String readUID() {
 
 
 // ════════════════════════════════════════════════════════════════
-//  12. NORMAL MODE — attendance scan
+//  13. NORMAL MODE — attendance scan
 //
 //  LCD row formats (all exactly 16 chars):
 //    Check-in:   "IN  HH:MM  XXXXX"   XXXXX = OK   / LATE  / E.ARR
@@ -506,7 +584,7 @@ void processNormal(const String& uid) {
 
 
 // ════════════════════════════════════════════════════════════════
-//  13. ADMIN MODE — push UID to pending queue on server
+//  14. ADMIN MODE — push UID to pending queue on server
 // ════════════════════════════════════════════════════════════════
 
 void processAdmin(const String& uid) {
@@ -616,6 +694,9 @@ void setup() {
   lcdMsg("Connecting WiFi.", WIFI_SSID);
   connectWiFi();
 
+  // Fetch remote time-threshold settings (overrides config.h defaults)
+  fetchSettings();
+
   // Sync any offline records immediately on boot
   if (wifiOk && offlineCount > 0) uploadOffline();
 
@@ -664,6 +745,12 @@ void loop() {
 
   // ── Clock update (1 s) ────────────────────────────────────
   if (now - lastClockMs > 1000) { lastClockMs = now; updateClock(); }
+
+  // ── Heartbeat to GAS (every 15 s) ────────────────────────
+  if (now - lastHeartbeatMs > HEARTBEAT_MS) {
+    lastHeartbeatMs = now;
+    sendHeartbeat();
+  }
 
   // ── RFID poll ─────────────────────────────────────────────
   if (!rfid.PICC_IsNewCardPresent()) return;

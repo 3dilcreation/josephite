@@ -29,7 +29,16 @@ function ss_() {
 //  ENTRY POINTS
 // ════════════════════════════════════════════════════════════════
 
-function doGet(e)  { return handle(e); }
+function doGet(e) {
+  var p = (e && e.parameter) ? e.parameter : {};
+  if (!p.action) {
+    return HtmlService.createHtmlOutputFromFile('Dashboard')
+      .setTitle('TechSei Attendance')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  return handle(e);
+}
 function doPost(e) { return handle(e); }
 
 function handle(e) {
@@ -57,6 +66,12 @@ function handle(e) {
       case "deleteStudent": out = deleteRec_(p);      break;
       case "getAttendance": out = getAttendance_(p);  break;
       case "stats":         out = stats_(p);          break;
+      case "login":           out = login_(p);           break;
+      case "verifyToken":     out = verifyToken_(p);     break;
+      case "heartbeat":       out = heartbeat_(p);       break;
+      case "getDeviceStatus": out = getDeviceStatus_();  break;
+      case "getSettings":     out = getSettings_();      break;
+      case "setSettings":     out = setSettings_(p);     break;
       default:              out = {ok: false, msg: "unknown action"};
     }
     return json_(out, p.callback);
@@ -74,9 +89,9 @@ function handle(e) {
 // ════════════════════════════════════════════════════════════════
 
 function setup_() {
-  var s = ss_();
-  if (s.getSheetByName(SHEET_ROSTER)) return;  // already initialised
+  if (PropertiesService.getScriptProperties().getProperty("v41_init")) return;
 
+  var s = ss_();
   ensure_(s, SHEET_ROSTER, [
     "UID","Type","Name","Branch","ID Number","Contact",
     "Course","Batch","Instructor","Role","Department",
@@ -98,11 +113,39 @@ function setup_() {
   if (!ctrl) {
     ctrl = s.insertSheet(SHEET_CTRL);
     ctrl.appendRow(["key", "value"]);
-    ctrl.appendRow(["adminMode",   "0"]);
-    ctrl.appendRow(["pendingUID",  ""]);
-    ctrl.appendRow(["pendingTime", ""]);
   }
-  Logger.log("Sheets created.");
+
+  // All required Control entries; skips any already present
+  var needed = {
+    adminMode:      "0",
+    pendingUID:     "",
+    pendingTime:    "",
+    adminUser:      "Tech Sei Lab",
+    adminPass:      "Techsei@091125",
+    sessionToken:   "",
+    deviceStatus:   "",
+    settingsVersion:"0",
+    openHour:       "7",  openMin:       "0",
+    lateHour:       "9",  lateMin:       "0",
+    closeHour:      "20", closeMin:      "0",
+    earlyOutHour:   "16", earlyOutMin:   "0",
+    overtimeHour:   "18", overtimeMin:   "0"
+  };
+  var d = ctrl.getDataRange().getValues();
+  var existing = d.slice(1).map(function(r) { return String(r[0]); });
+  for (var k in needed) {
+    if (existing.indexOf(k) === -1) ctrl.appendRow([k, needed[k]]);
+  }
+
+  PropertiesService.getScriptProperties().setProperty("v41_init", "1");
+  Logger.log("Setup complete (v4.1).");
+}
+
+// Run once to migrate an existing v4.0/v4.1 deployment to the new setup
+function migrateV41_() {
+  PropertiesService.getScriptProperties().deleteProperty("v41_init");
+  setup_();
+  Logger.log("Migration complete.");
 }
 
 // Run once when upgrading from v4.0 to add Status column to existing sheets
@@ -515,4 +558,95 @@ function json_(obj, callback) {
       .setMimeType(ContentService.MimeType.JAVASCRIPT);
   return ContentService.createTextOutput(txt)
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ADMIN AUTH  (credentials stored in Control sheet)
+// ════════════════════════════════════════════════════════════════
+
+function validateToken_(token) {
+  if (!token) return false;
+  var stored = ctrlGet_("sessionToken");
+  return !!(stored && stored === String(token));
+}
+
+function login_(p) {
+  var user = String(p.user || "").trim();
+  var pass = String(p.pass || "").trim();
+  if (user !== ctrlGet_("adminUser") || pass !== ctrlGet_("adminPass"))
+    return {ok: false, msg: "Invalid credentials"};
+  var token = Utilities.getUuid();
+  ctrlSet_("sessionToken", token);
+  return {ok: true, token: token};
+}
+
+function verifyToken_(p) {
+  return {ok: validateToken_(p.token || "")};
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DEVICE HEARTBEAT
+// ════════════════════════════════════════════════════════════════
+
+function heartbeat_(p) {
+  var status = JSON.stringify({
+    row0:  String(p.row0  || "").substring(0, 16),
+    row1:  String(p.row1  || "").substring(0, 16),
+    wifi:  String(p.wifi  || "0"),
+    queue: String(p.queue || "0"),
+    mode:  String(p.mode  || "normal"),
+    seen:  new Date().toISOString()
+  });
+  ctrlSet_("deviceStatus", status);
+  return {ok: true, settingsVersion: ctrlGet_("settingsVersion") || "0"};
+}
+
+function getDeviceStatus_() {
+  var raw = ctrlGet_("deviceStatus");
+  var s = {};
+  try { if (raw) s = JSON.parse(raw); } catch (e) {}
+  return {
+    ok:    true,
+    row0:  s.row0  || "",
+    row1:  s.row1  || "",
+    wifi:  s.wifi  || "0",
+    queue: s.queue || "0",
+    mode:  s.mode  || "normal",
+    seen:  s.seen  || ""
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TIME-THRESHOLD SETTINGS
+// ════════════════════════════════════════════════════════════════
+
+function getSettings_() {
+  return {
+    ok:           true,
+    version:      ctrlGet_("settingsVersion") || "0",
+    openHour:     parseInt(ctrlGet_("openHour"))     || 7,
+    openMin:      parseInt(ctrlGet_("openMin"))      || 0,
+    lateHour:     parseInt(ctrlGet_("lateHour"))     || 9,
+    lateMin:      parseInt(ctrlGet_("lateMin"))      || 0,
+    closeHour:    parseInt(ctrlGet_("closeHour"))    || 20,
+    closeMin:     parseInt(ctrlGet_("closeMin"))     || 0,
+    earlyOutHour: parseInt(ctrlGet_("earlyOutHour")) || 16,
+    earlyOutMin:  parseInt(ctrlGet_("earlyOutMin"))  || 0,
+    overtimeHour: parseInt(ctrlGet_("overtimeHour")) || 18,
+    overtimeMin:  parseInt(ctrlGet_("overtimeMin"))  || 0
+  };
+}
+
+function setSettings_(p) {
+  if (!validateToken_(p.token)) return {ok: false, msg: "Unauthorized"};
+  var keys = [
+    "openHour","openMin","lateHour","lateMin","closeHour","closeMin",
+    "earlyOutHour","earlyOutMin","overtimeHour","overtimeMin"
+  ];
+  keys.forEach(function(k) {
+    if (p[k] !== undefined) ctrlSet_(k, String(parseInt(p[k]) || 0));
+  });
+  var v = parseInt(ctrlGet_("settingsVersion") || "0") + 1;
+  ctrlSet_("settingsVersion", String(v));
+  return {ok: true, version: String(v)};
 }

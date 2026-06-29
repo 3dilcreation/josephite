@@ -59,3 +59,7 @@
 // Overtime — check-out AFTER this time is flagged OVERTIME
 #define OVERTIME_HOUR   18
 #define OVERTIME_MIN     0
+
+// ── Heartbeat & Settings Refresh ──────────────────────────────
+#define HEARTBEAT_MS         15000    // send LCD snapshot to GAS every 15 s
+#define SETTINGS_REFRESH_MS  3600000  // fallback full re-fetch every 1 hour

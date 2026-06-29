@@ -21,6 +21,10 @@ header{background:linear-gradient(135deg,#1E3A8A,#2563EB);color:#fff;
 .logo{font-size:17px;font-weight:700;letter-spacing:.3px}
 .logo span{opacity:.65;font-weight:400;font-size:13px;margin-left:8px}
 #clock{font-size:13px;opacity:.85;font-variant-numeric:tabular-nums}
+.btn-logout{background:rgba(255,255,255,.18);color:#fff;
+  border:1px solid rgba(255,255,255,.35);padding:5px 13px;border-radius:6px;
+  font-size:12px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-logout:hover{background:rgba(255,255,255,.28)}
 
 /* ── Tabs ── */
 .tabs{display:flex;background:#fff;border-bottom:2px solid var(--border);
@@ -123,8 +127,9 @@ tr:hover td{background:#F8FAFC}
 
 /* ── Dot ── */
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.dot-on{background:#22C55E;animation:pulse 1.5s infinite}
-.dot-off{background:var(--muted)}
+.dot-on  {background:#22C55E;animation:pulse 1.5s infinite}
+.dot-off {background:var(--muted)}
+.dot-idle{background:#F59E0B;animation:pulse 1.5s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 /* ── Toast ── */
@@ -134,13 +139,88 @@ tr:hover td{background:#F8FAFC}
 
 .section{display:none}
 .section.active{display:block}
+
+/* ── Login Overlay ── */
+#loginOverlay{position:fixed;inset:0;
+  background:linear-gradient(135deg,#1E3A8A,#2563EB);
+  display:flex;align-items:center;justify-content:center;z-index:10000}
+.login-card{background:#fff;border-radius:16px;padding:40px 36px;width:340px;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
+.login-title{font-size:22px;font-weight:700;color:#1E293B;margin-bottom:6px}
+.login-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+.login-card .form-row{margin-bottom:14px;text-align:left}
+.login-card .form-row label{font-size:12px;font-weight:600;color:var(--muted);
+  text-transform:uppercase;display:block;margin-bottom:5px}
+.login-card .form-row input{width:100%;border:1px solid var(--border);
+  border-radius:8px;padding:10px 14px;font-size:14px;outline:none;
+  transition:border .15s;color:var(--text)}
+.login-card .form-row input:focus{border-color:var(--brand)}
+.login-btn{width:100%;padding:11px;background:var(--brand);color:#fff;border:none;
+  border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px;
+  transition:background .15s}
+.login-btn:hover:not(:disabled){background:var(--brand2)}
+.login-btn:disabled{opacity:.6;cursor:not-allowed}
+.login-err{font-size:13px;color:var(--red);margin-top:10px;min-height:18px}
+
+/* ── LCD Screen ── */
+.lcd-screen{background:#0a1a00;border-radius:8px;padding:12px 16px;
+  font-family:'Courier New',Courier,monospace;display:inline-block;
+  border:3px solid #1a3a00;box-shadow:0 0 16px rgba(57,255,20,.15)}
+.lcd-row{color:#39ff14;font-size:18px;letter-spacing:2px;line-height:1.7;
+  white-space:pre;width:16ch;text-shadow:0 0 6px rgba(57,255,20,.5)}
+
+/* ── Device meta ── */
+.dev-meta{display:flex;gap:24px;flex-wrap:wrap;margin-top:14px}
+.dev-item .dlbl{font-size:10px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;display:block;margin-bottom:2px}
+.dev-item .dval{font-size:13px;font-weight:600}
+
+/* ── Settings Panel ── */
+.settings-panel{background:#F0FDF4;border:2px solid #BBF7D0;
+  border-radius:var(--r);padding:18px;margin-bottom:16px}
+.settings-title{font-size:14px;font-weight:700;margin-bottom:14px;color:#166534}
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.time-group{background:#fff;border-radius:8px;padding:12px;border:1px solid var(--border)}
+.time-lbl{font-size:10px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;margin-bottom:8px}
+.time-inputs{display:flex;align-items:center;gap:6px}
+.time-inputs input[type=number]{width:50px;border:1px solid var(--border);
+  border-radius:6px;padding:6px 4px;font-size:15px;text-align:center;
+  outline:none;-moz-appearance:textfield}
+.time-inputs input[type=number]::-webkit-inner-spin-button,
+.time-inputs input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+.time-inputs input[type=number]:focus{border-color:var(--brand)}
+.time-sep{font-size:18px;font-weight:700;color:var(--muted);line-height:1}
 </style>
 </head>
 <body>
 
+<!-- ══ LOGIN OVERLAY ══ -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <div class="login-title">TechSei Lab</div>
+    <div class="login-sub">Attendance System &middot; Admin Login</div>
+    <div class="form-row">
+      <label>Login ID</label>
+      <input id="loginUser" type="text" placeholder="Enter login ID"
+             onkeydown="loginKeydown(event)" autocomplete="username">
+    </div>
+    <div class="form-row">
+      <label>Password</label>
+      <input id="loginPass" type="password" placeholder="Enter password"
+             onkeydown="loginKeydown(event)" autocomplete="current-password">
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Login</button>
+    <div id="loginErr" class="login-err"></div>
+  </div>
+</div>
+
 <header>
   <div class="logo">TechSei Attendance <span>Smart RFID System v4.1</span></div>
-  <div id="clock">--:--:--</div>
+  <div style="display:flex;align-items:center;gap:14px">
+    <div id="clock">--:--:--</div>
+    <button class="btn-logout" onclick="doLogout()">Logout</button>
+  </div>
 </header>
 
 <div class="tabs">
@@ -160,6 +240,87 @@ tr:hover td{background:#F8FAFC}
       <div class="stat s2"><div class="n" id="sLate">—</div><div class="l">Late Arrivals</div></div>
       <div class="stat s3"><div class="n" id="sAbsent">—</div><div class="l">Absent Today</div></div>
       <div class="stat s4"><div class="n" id="sTotal">—</div><div class="l">Total Enrolled</div></div>
+    </div>
+
+    <!-- Device Status -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="dot dot-off" id="devDot"></span>&nbsp;Device Status
+        </div>
+        <span id="devStatus" style="font-size:12px;color:var(--muted)">No heartbeat yet</span>
+      </div>
+      <div class="card-body">
+        <div class="lcd-screen">
+          <div class="lcd-row" id="lcdRow0">                </div>
+          <div class="lcd-row" id="lcdRow1">                </div>
+        </div>
+        <div class="dev-meta">
+          <div class="dev-item">
+            <span class="dlbl">WiFi</span>
+            <span class="dval" id="devWifi">—</span>
+          </div>
+          <div class="dev-item">
+            <span class="dlbl">Offline Queue</span>
+            <span class="dval" id="devQueue">—</span>
+          </div>
+          <div class="dev-item">
+            <span class="dlbl">Device Mode</span>
+            <span class="dval" id="devMode">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time Threshold Settings -->
+    <div class="settings-panel">
+      <div class="settings-title">&#9881; Time Threshold Settings</div>
+      <div class="settings-grid">
+        <div class="time-group">
+          <div class="time-lbl">Opens (earliest check-in)</div>
+          <div class="time-inputs">
+            <input type="number" id="sOpenH" min="0" max="23" value="7">
+            <span class="time-sep">:</span>
+            <input type="number" id="sOpenM" min="0" max="59" value="0">
+          </div>
+        </div>
+        <div class="time-group">
+          <div class="time-lbl">Late After</div>
+          <div class="time-inputs">
+            <input type="number" id="sLateH" min="0" max="23" value="9">
+            <span class="time-sep">:</span>
+            <input type="number" id="sLateM" min="0" max="59" value="0">
+          </div>
+        </div>
+        <div class="time-group">
+          <div class="time-lbl">System Closes</div>
+          <div class="time-inputs">
+            <input type="number" id="sCloseH" min="0" max="23" value="20">
+            <span class="time-sep">:</span>
+            <input type="number" id="sCloseM" min="0" max="59" value="0">
+          </div>
+        </div>
+        <div class="time-group">
+          <div class="time-lbl">Early Dep. Before</div>
+          <div class="time-inputs">
+            <input type="number" id="sEarlyH" min="0" max="23" value="16">
+            <span class="time-sep">:</span>
+            <input type="number" id="sEarlyM" min="0" max="59" value="0">
+          </div>
+        </div>
+        <div class="time-group">
+          <div class="time-lbl">Overtime After</div>
+          <div class="time-inputs">
+            <input type="number" id="sOvertH" min="0" max="23" value="18">
+            <span class="time-sep">:</span>
+            <input type="number" id="sOvertM" min="0" max="59" value="0">
+          </div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-green" onclick="saveSettings()">Save &amp; Apply</button>
+        <button class="btn btn-ghost" onclick="loadSettings()">Reset</button>
+      </div>
     </div>
 
     <!-- Admin mode toggle -->
@@ -357,22 +518,84 @@ tr:hover td{background:#F8FAFC}
 
 <script>
 const BASE  = window.location.href.split('?')[0];
-let adminOn  = false;
-let pollTimer = null;
-let curType   = 'Student';
-let allRoster = [];
-let statsType = 'Student';
+let adminOn      = false;
+let pollTimer    = null;
+let devPollTimer = null;
+let curType      = 'Student';
+let allRoster    = [];
+let statsType    = 'Student';
+let authToken    = sessionStorage.getItem('authToken') || '';
+
+// ── Login ─────────────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('loginOverlay').style.display = 'flex';
+}
+function hideLogin() {
+  document.getElementById('loginOverlay').style.display = 'none';
+}
+function loginKeydown(e) {
+  if (e.key === 'Enter') doLogin();
+}
+
+function doLogin() {
+  const user  = document.getElementById('loginUser').value.trim();
+  const pass  = document.getElementById('loginPass').value.trim();
+  const errEl = document.getElementById('loginErr');
+  const btn   = document.getElementById('loginBtn');
+  if (!user || !pass) { errEl.textContent = 'Enter Login ID and Password'; return; }
+  errEl.textContent = '';
+  btn.disabled = true;
+  gas('login', {user, pass}).then(d => {
+    btn.disabled = false;
+    if (d.ok) {
+      authToken = d.token;
+      sessionStorage.setItem('authToken', d.token);
+      hideLogin();
+      initDashboard();
+    } else {
+      errEl.textContent = d.msg || 'Invalid credentials';
+    }
+  }).catch(() => {
+    btn.disabled = false;
+    errEl.textContent = 'Connection error — try again';
+  });
+}
+
+function doLogout() {
+  authToken = '';
+  sessionStorage.removeItem('authToken');
+  if (devPollTimer) { clearInterval(devPollTimer); devPollTimer = null; }
+  showLogin();
+}
 
 // ── Init ──────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
+  if (authToken) {
+    gas('verifyToken', {token: authToken}).then(d => {
+      if (d.ok) { hideLogin(); initDashboard(); }
+      else {
+        authToken = '';
+        sessionStorage.removeItem('authToken');
+        showLogin();
+      }
+    }).catch(() => showLogin());
+  } else {
+    showLogin();
+  }
+});
+
+function initDashboard() {
   tick();
   setInterval(tick, 1000);
   document.getElementById('attDate').value = toInputDate(fmtDate(new Date()));
   loadStats();
   loadToday();
   loadRoster();
+  loadSettings();
+  loadDeviceStatus();
+  devPollTimer = setInterval(loadDeviceStatus, 5000);
   setInterval(() => { loadStats(); loadToday(); }, 30000);
-});
+}
 
 function tick() {
   document.getElementById('clock').textContent =
@@ -477,20 +700,19 @@ function pollPending() {
 function showEnroll(uid, known) {
   document.getElementById('pendingUID').textContent = uid;
   document.getElementById('enrollPanel').style.display = 'block';
-
   if (known) {
-    document.getElementById('eName').value       = known.name       || '';
-    document.getElementById('eType').value       = known.type       || 'Student';
-    document.getElementById('eBranch').value     = known.branch     || '';
-    document.getElementById('eID').value         = known.idNumber   || '';
-    document.getElementById('eContact').value    = known.contact    || '';
-    document.getElementById('eCourse').value     = known.course     || '';
-    document.getElementById('eBatch').value      = known.batch      || '';
-    document.getElementById('eInstructor').value = known.instructor || '';
-    document.getElementById('eParent').value     = known.parentPhone|| '';
-    document.getElementById('eRole').value       = known.role       || '';
-    document.getElementById('eDept').value       = known.department || '';
-    document.getElementById('eNote').value       = known.note       || '';
+    document.getElementById('eName').value       = known.name        || '';
+    document.getElementById('eType').value       = known.type        || 'Student';
+    document.getElementById('eBranch').value     = known.branch      || '';
+    document.getElementById('eID').value         = known.idNumber    || '';
+    document.getElementById('eContact').value    = known.contact     || '';
+    document.getElementById('eCourse').value     = known.course      || '';
+    document.getElementById('eBatch').value      = known.batch       || '';
+    document.getElementById('eInstructor').value = known.instructor  || '';
+    document.getElementById('eParent').value     = known.parentPhone || '';
+    document.getElementById('eRole').value       = known.role        || '';
+    document.getElementById('eDept').value       = known.department  || '';
+    document.getElementById('eNote').value       = known.note        || '';
     typeChanged();
     toast('Card already enrolled — you can update details');
   } else {
@@ -518,7 +740,6 @@ function submitEnroll() {
   const name = document.getElementById('eName').value.trim();
   if (!uid || uid === '—') { toast('No pending UID'); return; }
   if (!name)               { toast('Name is required'); return; }
-
   const params = {
     uid,
     type:        document.getElementById('eType').value,
@@ -534,19 +755,99 @@ function submitEnroll() {
     department:  document.getElementById('eDept').value,
     note:        document.getElementById('eNote').value,
   };
-
   gas('enroll', params).then(d => {
-    if (d.ok) {
-      toast('Saved: ' + name);
-      hideEnroll();
-      loadRoster();
-    } else {
-      toast('Error: ' + d.msg);
-    }
+    if (d.ok) { toast('Saved: ' + name); hideEnroll(); loadRoster(); }
+    else toast('Error: ' + d.msg);
   });
 }
 
 function cancelEnroll() { hideEnroll(); }
+
+// ── DEVICE STATUS ─────────────────────────────────────────────
+function loadDeviceStatus() {
+  gas('getDeviceStatus', {}).then(d => {
+    if (!d.ok) return;
+
+    // LCD rows — always 16 chars wide
+    document.getElementById('lcdRow0').textContent =
+      (d.row0 || '').padEnd(16, ' ').substring(0, 16);
+    document.getElementById('lcdRow1').textContent =
+      (d.row1 || '').padEnd(16, ' ').substring(0, 16);
+
+    // WiFi indicator
+    const wifiEl = document.getElementById('devWifi');
+    wifiEl.textContent = d.wifi === '1' ? 'Connected' : 'Offline';
+    wifiEl.style.color = d.wifi === '1' ? 'var(--green)' : 'var(--red)';
+
+    // Queue indicator
+    const qEl = document.getElementById('devQueue');
+    const q = parseInt(d.queue || '0');
+    qEl.textContent = q === 0 ? 'Empty' : q + ' pending';
+    qEl.style.color = q > 0 ? 'var(--amber)' : 'var(--green)';
+
+    // Mode
+    document.getElementById('devMode').textContent =
+      d.mode === 'admin' ? 'Admin' : 'Normal';
+
+    // Online dot + status label
+    const dot      = document.getElementById('devDot');
+    const statusEl = document.getElementById('devStatus');
+    if (!d.seen) {
+      dot.className = 'dot dot-off';
+      statusEl.textContent = 'No heartbeat yet';
+      return;
+    }
+    const secAgo = Math.floor((Date.now() - new Date(d.seen).getTime()) / 1000);
+    if (secAgo < 60) {
+      dot.className = 'dot dot-on';
+      statusEl.textContent = 'Online · ' + secAgo + 's ago';
+    } else if (secAgo < 300) {
+      dot.className = 'dot dot-idle';
+      statusEl.textContent = 'Idle · ' + Math.floor(secAgo / 60) + 'm ago';
+    } else {
+      dot.className = 'dot dot-off';
+      statusEl.textContent = 'Offline · last seen ' + Math.floor(secAgo / 60) + 'm ago';
+    }
+  });
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────
+function loadSettings() {
+  gas('getSettings', {}).then(d => {
+    if (!d.ok) return;
+    document.getElementById('sOpenH').value  = d.openHour     !== undefined ? d.openHour     : 7;
+    document.getElementById('sOpenM').value  = d.openMin      !== undefined ? d.openMin      : 0;
+    document.getElementById('sLateH').value  = d.lateHour     !== undefined ? d.lateHour     : 9;
+    document.getElementById('sLateM').value  = d.lateMin      !== undefined ? d.lateMin      : 0;
+    document.getElementById('sCloseH').value = d.closeHour    !== undefined ? d.closeHour    : 20;
+    document.getElementById('sCloseM').value = d.closeMin     !== undefined ? d.closeMin     : 0;
+    document.getElementById('sEarlyH').value = d.earlyOutHour !== undefined ? d.earlyOutHour : 16;
+    document.getElementById('sEarlyM').value = d.earlyOutMin  !== undefined ? d.earlyOutMin  : 0;
+    document.getElementById('sOvertH').value = d.overtimeHour !== undefined ? d.overtimeHour : 18;
+    document.getElementById('sOvertM').value = d.overtimeMin  !== undefined ? d.overtimeMin  : 0;
+  });
+}
+
+function saveSettings() {
+  if (!authToken) { toast('Session expired — please log in again'); return; }
+  const params = {
+    token:        authToken,
+    openHour:     parseInt(document.getElementById('sOpenH').value)  || 0,
+    openMin:      parseInt(document.getElementById('sOpenM').value)  || 0,
+    lateHour:     parseInt(document.getElementById('sLateH').value)  || 0,
+    lateMin:      parseInt(document.getElementById('sLateM').value)  || 0,
+    closeHour:    parseInt(document.getElementById('sCloseH').value) || 0,
+    closeMin:     parseInt(document.getElementById('sCloseM').value) || 0,
+    earlyOutHour: parseInt(document.getElementById('sEarlyH').value) || 0,
+    earlyOutMin:  parseInt(document.getElementById('sEarlyM').value) || 0,
+    overtimeHour: parseInt(document.getElementById('sOvertH').value) || 0,
+    overtimeMin:  parseInt(document.getElementById('sOvertM').value) || 0,
+  };
+  gas('setSettings', params).then(d => {
+    if (d.ok) toast('Settings saved! ESP32 updates within ~15 s');
+    else      toast('Error: ' + (d.msg || 'Save failed'));
+  });
+}
 
 // ── ATTENDANCE TAB ───────────────────────────────────────────
 function setType(t, el) {
@@ -567,11 +868,9 @@ function loadAttendance() {
       tbody.innerHTML = '<tr><td colspan="8" class="empty">Error loading</td></tr>';
       return;
     }
-
     let rows = d.rows || [];
     if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search));
     document.getElementById('attCount').textContent = rows.length + ' records';
-
     if (!rows.length) {
       tbody.innerHTML = '<tr><td colspan="8" class="empty">No records found</td></tr>';
       return;
@@ -665,7 +964,6 @@ function loadStatsTab() {
     set('stAbsent',  d.absentToday);
     set('stRate',    rate + '%');
 
-    // Absentees
     const al = document.getElementById('absentList');
     if (!d.absentees.length) {
       al.innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">All present!</div>';
@@ -677,7 +975,6 @@ function loadStatsTab() {
         </div>`).join('');
     }
 
-    // By group bar chart
     const gl = document.getElementById('groupList');
     const groups = Object.entries(d.byGroup || {});
     if (!groups.length) {

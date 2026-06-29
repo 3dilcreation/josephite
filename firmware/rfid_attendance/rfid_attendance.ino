@@ -214,7 +214,7 @@ void processCard(const String& uid) {
 // ═══════════════════════════════════════════════════════════════
 //  GOOGLE SHEETS POST
 // ═══════════════════════════════════════════════════════════════
-void postRecord(const String& payload, bool isSync) {
+void postRecord(const String& payload, bool isSync = false) {
   WiFiClientSecure client;
   client.setInsecure();  // Skip cert verification (GAS uses valid cert anyway)
 

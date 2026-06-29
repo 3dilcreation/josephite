@@ -517,7 +517,12 @@ tr:hover td{background:#F8FAFC}
 <div id="toast"></div>
 
 <script>
-const BASE  = window.location.href.split('?')[0];
+// GAS_URL is injected server-side by doGet via createTemplateFromFile.
+// It is always the /exec URL regardless of post-redirect location.
+var GAS_URL = '<?= gasUrl ?>';
+const BASE  = (GAS_URL && GAS_URL.indexOf('script.google.com') !== -1)
+            ? GAS_URL
+            : window.location.href.split('?')[0];
 let adminOn      = false;
 let pollTimer    = null;
 let devPollTimer = null;

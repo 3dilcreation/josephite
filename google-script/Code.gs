@@ -46,7 +46,12 @@ function ss_() {
 function doGet(e) {
   var p = (e && e.parameter) ? e.parameter : {};
   if (!p.action) {
-    return HtmlService.createHtmlOutputFromFile('Dashboard')
+    // Use a template so the exec URL is baked into the page —
+    // window.location.href can resolve to googleusercontent.com after
+    // GAS redirects, which cannot serve API responses.
+    var tmpl = HtmlService.createTemplateFromFile('Dashboard');
+    tmpl.gasUrl = ScriptApp.getService().getUrl();
+    return tmpl.evaluate()
       .setTitle('TechSei Attendance')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);

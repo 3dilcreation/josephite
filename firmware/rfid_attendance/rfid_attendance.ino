@@ -56,6 +56,27 @@ unsigned long lastScanMs = 0;
 unsigned long lastWifiCheck = 0;
 unsigned long lastClockMs   = 0;
 
+// ── Forward declarations (required when functions are called before their definition) ──
+void postRecord(const String& payload, bool isSync = false);
+void processCard(const String& uid);
+void connectWiFi();
+void waitNTP();
+void syncOfflineQueue();
+void queueOffline(const String& payload);
+void updateClock();
+void displayReady();
+void splashScreen();
+void showAttendanceResult(String name, String action, bool late, bool overtime, String note);
+void lcdMsg(const String& top, const String& bot);
+void lcdIcon(uint8_t icon, const String& top, const String& bot);
+void setLed(bool green);
+void beepBoot();
+void beepCheckIn();
+void beepCheckOut();
+void beepError();
+void beepWarn();
+String readUID();
+
 // ═══════════════════════════════════════════════════════════════
 //  SETUP
 // ═══════════════════════════════════════════════════════════════

@@ -1,25 +1,28 @@
 /*
  * ================================================================
- *   Smart RFID Attendance System  v4.0  —  TechSei Lab
+ *   Smart RFID Attendance System  v4.1  —  TechSei Lab
  * ================================================================
  *   Hardware:
  *     ESP32  |  MFRC522 RFID  |  DS3231 RTC  |  I2C LCD 16×2
- *     Active buzzer on GPIO 4  |  BOOT button on GPIO 0
+ *     Active buzzer GPIO 4  |  BOOT button GPIO 0
  *
- *   Libraries  (Arduino Library Manager):
+ *   Libraries (Sketch → Include Library → Manage Libraries):
  *     MFRC522           by GithubCommunity
  *     LiquidCrystal_I2C by Frank de Brabander
  *     RTClib            by Adafruit
  *     ArduinoJson       by Benoit Blanchon  v6.x
  *
- *   Features:
- *     • Check-in / check-out toggle per UID (Preferences, survives reboot)
- *     • DS3231 RTC — no internet time needed
+ *   Features (v4.1):
+ *     • Check-in / check-out toggle per UID (Preferences NVS, survives reboot)
+ *     • DS3231 RTC — accurate time without internet
  *     • SPIFFS offline queue — auto-uploads when WiFi returns
- *     • Buzzer ONLY on check-in / check-out confirmation
- *     • Admin mode (hold BOOT 1 s) — scan card → push UID to server
- *       → enroll name/dept/ID via web dashboard
- *     • Student / Staff / Others support (matches GAS Roster sheet)
+ *     • Buzzer ONLY on check-in / check-out (no boot beeps, no error beeps)
+ *     • Admin mode (hold BOOT 1 s) — scan → enroll via web dashboard
+ *     • Student / Staff / Others support
+ *     • Time-based status: ON_TIME / LATE / EARLY_ARR / EARLY_DEP / OVERTIME
+ *     • All time thresholds configurable in config.h — no recompile needed
+ *     • LCD shows hours worked on check-out (e.g. "OUT 17:30  8.0h ")
+ *     • Idle screen shows contextual hint (LATE, Closed, etc.)
  * ================================================================
  */
 
@@ -39,12 +42,12 @@
 MFRC522           rfid(SS_PIN, RST_PIN);
 LiquidCrystal_I2C lcd(LCD_ADDR, 16, 2);
 RTC_DS3231        rtc;
-Preferences       prefs;       // IN/OUT state per card UID
+Preferences       prefs;
 
 // ── Global state ─────────────────────────────────────────────────
 bool          wifiOk       = false;
 bool          adminMode    = false;
-unsigned long adminModeMs  = 0;   // millis() when admin mode started
+unsigned long adminModeMs  = 0;
 String        lastUID      = "";
 unsigned long lastScanMs   = 0;
 unsigned long lastWifiMs   = 0;
@@ -57,7 +60,7 @@ const char* DAYS[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
 
 
 // ════════════════════════════════════════════════════════════════
-//  1. BUZZER  — only IN and OUT confirmations
+//  1. BUZZER — ONLY check-in and check-out confirmations
 // ════════════════════════════════════════════════════════════════
 
 void beepIn() {
@@ -91,18 +94,26 @@ void lcdMsg(const char* top, const char* bot) {
 
 void updateClock() {
   DateTime now = rtc.now();
-  char row0[17], row1[17];
-
+  char row0[17];
   snprintf(row0, sizeof(row0), "%s %02d/%02d  %02d:%02d",
     DAYS[now.dayOfTheWeek()], now.day(), now.month(),
     now.hour(), now.minute());
 
+  char row1[17];
   if (adminMode) {
     snprintf(row1, sizeof(row1), "**ADMIN** Scan  ");
-  } else if (wifiOk) {
-    snprintf(row1, sizeof(row1), "[WiFi] Scan Card");
   } else {
-    snprintf(row1, sizeof(row1), "[OFLN] Scan Card");
+    const char* wifi = wifiOk ? "[WiFi]" : "[OFLN]";
+    int cur = now.hour() * 60 + now.minute();
+    if (cur < OPEN_HOUR * 60 + OPEN_MIN) {
+      snprintf(row1, sizeof(row1), "%s TooEarly ", wifi);
+    } else if (cur >= CLOSE_HOUR * 60 + CLOSE_MIN) {
+      snprintf(row1, sizeof(row1), "%s Closed   ", wifi);
+    } else if (cur >= LATE_HOUR * 60 + LATE_MIN) {
+      snprintf(row1, sizeof(row1), "%s LATE Scan", wifi);
+    } else {
+      snprintf(row1, sizeof(row1), "%s Scan Card", wifi);
+    }
   }
 
   lcd.setCursor(0, 0); lcd.print(row0);
@@ -119,7 +130,7 @@ void showResult(const char* line0, const char* line1, int holdMs) {
 
 
 // ════════════════════════════════════════════════════════════════
-//  3. URL ENCODE  (needed for GAS GET requests)
+//  3. URL ENCODE
 // ════════════════════════════════════════════════════════════════
 
 String urlEncode(const String& str) {
@@ -175,10 +186,10 @@ String getDateStr() {
 
 
 // ════════════════════════════════════════════════════════════════
-//  6. PREFERENCES — IN/OUT status per card UID
+//  6. PREFERENCES — per-card IN/OUT status and check-in time
 // ════════════════════════════════════════════════════════════════
 
-// Compress UID to ≤15-char Preferences key (remove colons, take first 15)
+// Strip colons/spaces, cap at 15 chars (Preferences key limit)
 String makeKey(const String& uid) {
   String k = uid;
   k.replace(":", "");
@@ -187,9 +198,15 @@ String makeKey(const String& uid) {
   return k;
 }
 
+// "t" prefix + first 14 chars of uid key = max 15 chars
+String makeTimeKey(const String& uid) {
+  String k = "t" + makeKey(uid);
+  if (k.length() > 15) k = k.substring(0, 15);
+  return k;
+}
+
+// Returns true = next scan is IN (default for new cards)
 bool getStatus(const String& uid) {
-  // true  = next scan is IN
-  // false = next scan is OUT
   return prefs.getBool(makeKey(uid).c_str(), true);
 }
 
@@ -197,26 +214,79 @@ void setStatus(const String& uid, bool nextIsIn) {
   prefs.putBool(makeKey(uid).c_str(), nextIsIn);
 }
 
+void saveCheckInTime(const String& uid, const String& t) {
+  prefs.putString(makeTimeKey(uid).c_str(), t.c_str());
+}
+
+String getCheckInTime(const String& uid) {
+  return prefs.getString(makeTimeKey(uid).c_str(), "");
+}
+
 
 // ════════════════════════════════════════════════════════════════
-//  7. SPIFFS OFFLINE QUEUE
-//     Format per line:  uid|date|intime|outtime
-//     Server fills name from Roster on upload
+//  7. STATUS DETERMINATION (uses config.h thresholds)
+// ════════════════════════════════════════════════════════════════
+
+String determineStatus(bool isIn, int h, int m) {
+  int cur = h * 60 + m;
+  if (isIn) {
+    if (cur <  OPEN_HOUR * 60 + OPEN_MIN)  return "EARLY_ARR";
+    if (cur >= LATE_HOUR * 60 + LATE_MIN)  return "LATE";
+    return "ON_TIME";
+  } else {
+    if (cur >= OVERTIME_HOUR  * 60 + OVERTIME_MIN)   return "OVERTIME";
+    if (cur <  EARLY_OUT_HOUR * 60 + EARLY_OUT_MIN)  return "EARLY_DEP";
+    return "ON_TIME";
+  }
+}
+
+// 5-char status label for LCD row
+const char* statusLabel(const String& st) {
+  if (st == "LATE")      return "LATE ";
+  if (st == "EARLY_ARR") return "E.ARR";
+  if (st == "EARLY_DEP") return "E.DEP";
+  if (st == "OVERTIME")  return "OT   ";
+  return "OK   ";
+}
+
+// Hours worked as ≤5-char string (e.g. "8.0h ", "10.0h")
+String calcHoursLcd(const String& inT, const String& outT) {
+  if (inT.length() < 5 || outT.length() < 5) return "?h   ";
+  int diff = (outT.substring(0, 2).toInt() * 60 + outT.substring(3, 5).toInt())
+           - (inT.substring(0, 2).toInt()  * 60 + inT.substring(3, 5).toInt());
+  if (diff <= 0) return "0h   ";
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%.1fh", diff / 60.0f);
+  String s = String(buf);
+  while ((int)s.length() < 5) s += " ";
+  return s.substring(0, 5);
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  8. SPIFFS OFFLINE QUEUE
+//     Format per line:  uid|date|intime|outtime|status
 // ════════════════════════════════════════════════════════════════
 
 void saveOffline(const String& uid, const String& date,
-                 const String& inT, const String& outT) {
+                 const String& inT,  const String& outT,
+                 const String& status = "ON_TIME") {
   File f = SPIFFS.open("/queue.txt", FILE_APPEND);
   if (!f) { Serial.println("[SPIFFS] Open failed"); return; }
   f.println(uid + "|" + date + "|" +
             (inT.isEmpty()  ? "-" : inT)  + "|" +
-            (outT.isEmpty() ? "-" : outT));
+            (outT.isEmpty() ? "-" : outT) + "|" +
+            status);
   f.close();
   offlineCount++;
   Serial.printf("[SPIFFS] Saved offline #%d\n", offlineCount);
 }
 
-// Returns HTTP response body, or "" on failure
+
+// ════════════════════════════════════════════════════════════════
+//  9. HTTP (HTTPS GET to Google Apps Script)
+// ════════════════════════════════════════════════════════════════
+
 String httpGet(const String& url) {
   WiFiClientSecure client;
   client.setInsecure();
@@ -231,10 +301,34 @@ String httpGet(const String& url) {
   return body;
 }
 
+// Send an attendance log entry to GAS
+String sendLog(const String& uid,    const String& date,
+               const String& inT,    const String& outT,
+               const String& status) {
+  String url = String(GAS_URL) +
+    "?action=log&uid="     + urlEncode(uid)    +
+    "&date="               + urlEncode(date)   +
+    "&intime="             + urlEncode(inT)    +
+    "&outtime="            + urlEncode(outT)   +
+    "&status="             + urlEncode(status);
+  return httpGet(url);
+}
+
+// Push UID to server's pending queue (admin enrollment)
+String pushAdminScan(const String& uid) {
+  String url = String(GAS_URL) + "?action=pushScan&uid=" + urlEncode(uid);
+  return httpGet(url);
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  10. UPLOAD OFFLINE QUEUE (called when WiFi restores)
+// ════════════════════════════════════════════════════════════════
+
 void uploadOffline() {
   if (!SPIFFS.exists("/queue.txt")) return;
   Serial.println("[SPIFFS] Uploading offline records...");
-  lcdMsg("Syncing offline", "Please wait...");
+  lcdMsg("Syncing offline ", "Please wait...  ");
 
   File f = SPIFFS.open("/queue.txt", FILE_READ);
   if (!f) return;
@@ -247,25 +341,23 @@ void uploadOffline() {
     line.trim();
     if (line.isEmpty()) continue;
 
-    // Parse uid|date|intime|outtime
-    String parts[4];
+    // Parse uid|date|intime|outtime|status  (status optional for v4.0 records)
+    String parts[5];
     int idx = 0, start = 0;
-    for (int i = 0; i <= (int)line.length() && idx < 4; i++) {
+    for (int i = 0; i <= (int)line.length() && idx < 5; i++) {
       if (i == (int)line.length() || line[i] == '|') {
         parts[idx++] = line.substring(start, i);
         start = i + 1;
       }
     }
-    String inT  = (parts[2] == "-") ? "" : parts[2];
-    String outT = (parts[3] == "-") ? "" : parts[3];
+    if (idx < 4) { tmp.println(line); failed++; continue; } // malformed
 
-    String url = String(GAS_URL) +
-      "?action=log&uid=" + urlEncode(parts[0]) +
-      "&date=" + urlEncode(parts[1]) +
-      "&intime=" + urlEncode(inT) +
-      "&outtime=" + urlEncode(outT);
+    String inT    = (parts[2] == "-") ? "" : parts[2];
+    String outT   = (parts[3] == "-") ? "" : parts[3];
+    String status = (idx > 4 && parts[4].length() > 0) ? parts[4] : "ON_TIME";
 
-    String resp = httpGet(url);
+    String resp = sendLog(parts[0], parts[1], inT, outT, status);
+
     StaticJsonDocument<256> doc;
     bool ok = false;
     if (deserializeJson(doc, resp) == DeserializationError::Ok) {
@@ -275,7 +367,6 @@ void uploadOffline() {
     if (ok) {
       synced++;
     } else {
-      // Keep failed lines for next attempt
       tmp.println(line);
       failed++;
     }
@@ -293,37 +384,13 @@ void uploadOffline() {
   }
 
   offlineCount = failed;
-  Serial.printf("[SPIFFS] Synced %d, retained %d failed\n", synced, failed);
+  Serial.printf("[SPIFFS] Synced %d, retained %d\n", synced, failed);
   updateClock();
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  8. GAS HTTP CALLS
-// ════════════════════════════════════════════════════════════════
-
-// Log attendance — returns JSON {ok, event, name, type, late}
-String logAttendance(const String& uid, const String& date,
-                     const String& inT, const String& outT) {
-  String url = String(GAS_URL) +
-    "?action=log&uid=" + urlEncode(uid) +
-    "&date=" + urlEncode(date) +
-    "&intime=" + urlEncode(inT) +
-    "&outtime=" + urlEncode(outT);
-  return httpGet(url);
-}
-
-// Push UID to server pending queue (admin mode)
-// Returns {ok, existing, name} — existing=true if already in roster
-String pushAdminScan(const String& uid) {
-  String url = String(GAS_URL) +
-    "?action=pushScan&uid=" + urlEncode(uid);
-  return httpGet(url);
-}
-
-
-// ════════════════════════════════════════════════════════════════
-//  9. RFID UID READER
+//  11. RFID UID READER
 // ════════════════════════════════════════════════════════════════
 
 String readUID() {
@@ -338,73 +405,100 @@ String readUID() {
 
 
 // ════════════════════════════════════════════════════════════════
-//  10. CARD PROCESSING — NORMAL MODE
+//  12. NORMAL MODE — attendance scan
+//
+//  LCD row formats (all exactly 16 chars):
+//    Check-in:   "IN  HH:MM  XXXXX"   XXXXX = OK   / LATE  / E.ARR
+//                "Name (padded)    "
+//    Check-out:  "OUT HH:MM  XXXXX"   XXXXX = 2.5h / OT    / E.DEP
+//                "Name (padded)    "
+//    Offline:    "IN  (Offline)   "
+//                "HH:MM  Q:N      "
 // ════════════════════════════════════════════════════════════════
 
 void processNormal(const String& uid) {
-  bool isIn     = getStatus(uid);   // true = this scan is a check-in
-  String date   = getDateStr();
+  bool   isIn    = getStatus(uid);
+  DateTime t     = rtc.now();
+  int    h = t.hour(), m = t.minute();
+  String date    = getDateStr();
   String timeNow = getTimeStr();
-  String inT    = isIn  ? timeNow : "";
-  String outT   = isIn  ? ""      : timeNow;
+  String inT     = isIn ? timeNow : "";
+  String outT    = isIn ? ""      : timeNow;
+  String status  = determineStatus(isIn, h, m);
 
   // Show "Scanning..." while waiting for server
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Scanning card...");
   lcd.setCursor(0, 1); lcd.print(uid.substring(0, 16));
 
-  String resp = "";
-  bool   online = wifiOk;
-
-  if (online) resp = logAttendance(uid, date, inT, outT);
-
-  // ── Parse server response ──────────────────────────────────
-  bool   ok      = false;
-  String name    = "";
-  String event   = isIn ? "IN" : "OUT";
-  bool   late    = false;
-
-  if (!resp.isEmpty()) {
-    StaticJsonDocument<256> doc;
-    if (deserializeJson(doc, resp) == DeserializationError::Ok) {
-      ok    = doc["ok"]    | false;
-      name  = doc["name"]  | "";
-      event = doc["event"] | (isIn ? "IN" : "OUT");
-      late  = doc["late"]  | false;
-    }
-  }
-
-  if (!online || !ok) {
-    // Save to SPIFFS and show offline message
-    saveOffline(uid, date, inT, outT);
-    // Still toggle and beep — user experience matters
-    String l0 = isIn ? "IN  (Offline)" : "OUT (Offline)";
-    String l1 = timeNow + "  Queue:" + String(offlineCount);
-    if (isIn) beepIn(); else beepOut();
+  // ── Offline path ────────────────────────────────────────────
+  if (!wifiOk) {
+    saveOffline(uid, date, inT, outT, status);
+    if (isIn) { saveCheckInTime(uid, timeNow); beepIn(); }
+    else beepOut();
     setStatus(uid, !isIn);
-    showResult(l0.c_str(), l1.c_str(), 2500);
+
+    char l1[17];
+    snprintf(l1, sizeof(l1), "%-16s", (timeNow + "  Q:" + String(offlineCount)).c_str());
+    showResult(isIn ? "IN  (Offline)   " : "OUT (Offline)   ", l1, 2500);
     return;
   }
 
-  if (!ok || name.isEmpty()) {
-    // Unknown card
+  // ── Online path ─────────────────────────────────────────────
+  String resp = sendLog(uid, date, inT, outT, status);
+
+  // HTTP failure → treat as offline
+  if (resp.isEmpty()) {
+    saveOffline(uid, date, inT, outT, status);
+    if (isIn) { saveCheckInTime(uid, timeNow); beepIn(); }
+    else beepOut();
+    setStatus(uid, !isIn);
+
     char l1[17];
-    snprintf(l1, sizeof(l1), "%-16s", uid.substring(0,16).c_str());
+    snprintf(l1, sizeof(l1), "%-16s", (timeNow + "  Q:" + String(offlineCount)).c_str());
+    showResult(isIn ? "IN  (Offline)   " : "OUT (Offline)   ", l1, 2500);
+    return;
+  }
+
+  // ── Parse server response ───────────────────────────────────
+  bool   ok    = false;
+  String name  = "";
+  String event = isIn ? "IN" : "OUT";
+
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, resp) == DeserializationError::Ok) {
+    ok    = doc["ok"]    | false;
+    name  = doc["name"]  | "";
+    event = doc["event"] | (isIn ? "IN" : "OUT");
+  }
+
+  // Unknown card (not in roster)
+  if (!ok || name.isEmpty()) {
+    char l1[17];
+    snprintf(l1, sizeof(l1), "%-16s", uid.substring(0, 16).c_str());
     showResult("X Unknown Card  ", l1, 2500);
     return;
   }
 
-  // ── Success ───────────────────────────────────────────────
-  setStatus(uid, event == "OUT");   // if OUT just happened, next is IN
+  // ── Success ─────────────────────────────────────────────────
+  setStatus(uid, event == "OUT");  // if OUT just happened, next is IN
 
   char line0[17], line1[17];
   if (event == "IN") {
-    snprintf(line0, sizeof(line0), "IN   %-11s", name.substring(0,11).c_str());
-    snprintf(line1, sizeof(line1), "%s%s", timeNow.c_str(), late ? "  *LATE*" : "         ");
+    saveCheckInTime(uid, timeNow);
+    // "IN  HH:MM  XXXXX"  (4 + 5 + 2 + 5 = 16)
+    snprintf(line0, sizeof(line0), "IN  %s  %s", timeNow.c_str(), statusLabel(status));
+    snprintf(line1, sizeof(line1), "%-16s", name.substring(0, 16).c_str());
     beepIn();
   } else {
-    snprintf(line0, sizeof(line0), "OUT  %-11s", name.substring(0,11).c_str());
-    snprintf(line1, sizeof(line1), "%s  Goodbye!", timeNow.c_str());
+    // Show status label for OVERTIME/EARLY_DEP; hours worked otherwise
+    String inStored = getCheckInTime(uid);
+    String info = (status == "OVERTIME" || status == "EARLY_DEP")
+      ? String(statusLabel(status))
+      : calcHoursLcd(inStored, timeNow);
+    // "OUT HH:MM  XXXXX"  (4 + 5 + 2 + 5 = 16)
+    snprintf(line0, sizeof(line0), "OUT %s  %s", timeNow.c_str(), info.c_str());
+    snprintf(line1, sizeof(line1), "%-16s", name.substring(0, 16).c_str());
     beepOut();
   }
   showResult(line0, line1, 2500);
@@ -412,7 +506,7 @@ void processNormal(const String& uid) {
 
 
 // ════════════════════════════════════════════════════════════════
-//  11. CARD PROCESSING — ADMIN MODE
+//  13. ADMIN MODE — push UID to pending queue on server
 // ════════════════════════════════════════════════════════════════
 
 void processAdmin(const String& uid) {
@@ -420,11 +514,14 @@ void processAdmin(const String& uid) {
   lcd.setCursor(0, 0); lcd.print("Sending to web..");
   lcd.setCursor(0, 1); lcd.print(uid.substring(0, 16));
 
-  String resp = "";
-  if (wifiOk) resp = pushAdminScan(uid);
-
-  if (!wifiOk || resp.isEmpty()) {
+  if (!wifiOk) {
     showResult("No WiFi!        ", "Need WiFi 4 enrl", 2500);
+    return;
+  }
+
+  String resp = pushAdminScan(uid);
+  if (resp.isEmpty()) {
+    showResult("Server Error    ", "Try again       ", 2500);
     return;
   }
 
@@ -446,7 +543,7 @@ void processAdmin(const String& uid) {
 
   if (existing) {
     char l0[17];
-    snprintf(l0, sizeof(l0), "%-16s", ("Enrolled: " + name).substring(0,16).c_str());
+    snprintf(l0, sizeof(l0), "%-16s", ("Enrolled: " + name).substring(0, 16).c_str());
     showResult(l0, "Scan another crd", 2500);
   } else {
     char l1[17];
@@ -465,9 +562,9 @@ void processAdmin(const String& uid) {
 
 void setup() {
   Serial.begin(115200);
-  Serial.println(F("\n=== Smart RFID Attendance v4.0 ==="));
+  Serial.println(F("\n=== Smart RFID Attendance v4.1 ==="));
 
-  // Pins
+  // GPIO
   pinMode(BUZZER,    OUTPUT); digitalWrite(BUZZER, LOW);
   pinMode(ADMIN_BTN, INPUT_PULLUP);
 
@@ -475,28 +572,26 @@ void setup() {
   Wire.begin(SDA_PIN, SCL_PIN);
   lcd.init();
   lcd.backlight();
-
-  // Splash
-  lcdMsg("Smart Attendance", "  TechSei v4.0  ");
+  lcdMsg("Smart Attendance", ORG_NAME);
   delay(2000);
 
   // RTC
   if (!rtc.begin()) {
-    lcdMsg("RTC Error!", "Check wiring    ");
-    Serial.println("[RTC] Not found!");
+    lcdMsg("RTC Error!      ", "Check wiring    ");
+    Serial.println("[RTC] Not found — check wiring and RTClib install");
     while (1) delay(1000);
   }
   if (rtc.lostPower()) {
+    // Set to compile time when RTC battery is dead; user can adjust via serial later
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    Serial.println("[RTC] Time reset to compile time");
+    Serial.println("[RTC] Lost power — reset to compile time");
   }
-  Serial.printf("[RTC] %s\n", getDateStr().c_str());
+  Serial.printf("[RTC] %s %s\n", getDateStr().c_str(), getTimeStr().c_str());
 
   // SPIFFS
   if (!SPIFFS.begin(true)) {
     Serial.println("[SPIFFS] Mount failed");
   } else {
-    // Count pending offline records
     if (SPIFFS.exists("/queue.txt")) {
       File f = SPIFFS.open("/queue.txt", FILE_READ);
       while (f.available()) {
@@ -508,7 +603,7 @@ void setup() {
     }
   }
 
-  // Preferences
+  // Preferences (per-card state)
   prefs.begin("attend", false);
 
   // RFID
@@ -521,7 +616,7 @@ void setup() {
   lcdMsg("Connecting WiFi.", WIFI_SSID);
   connectWiFi();
 
-  // Upload any offline records immediately
+  // Sync any offline records immediately on boot
   if (wifiOk && offlineCount > 0) uploadOffline();
 
   updateClock();
@@ -536,24 +631,20 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // ── Admin mode button (hold BOOT/GPIO 0 for 1 s) ──────────
+  // ── Admin mode: hold BOOT button for ADMIN_HOLD_MS ────────
   bool btnLow = (digitalRead(ADMIN_BTN) == LOW);
-  if (btnLow && !btnWasLow) {
-    btnWasLow = true;
-    btnLowMs  = now;
-  }
+  if (btnLow && !btnWasLow) { btnWasLow = true; btnLowMs = now; }
   if (btnLow && btnWasLow && (now - btnLowMs >= ADMIN_HOLD_MS)) {
-    // Toggle admin mode
     adminMode   = !adminMode;
     adminModeMs = now;
-    btnWasLow   = false;  // consume this press
+    btnWasLow   = false;
     Serial.printf("[BTN] Admin mode %s\n", adminMode ? "ON" : "OFF");
     updateClock();
-    delay(300);  // small debounce after toggle
+    delay(300);
   }
   if (!btnLow) btnWasLow = false;
 
-  // ── Admin mode auto-timeout ────────────────────────────────
+  // ── Admin auto-timeout ─────────────────────────────────────
   if (adminMode && (now - adminModeMs > ADMIN_TIMEOUT_MS)) {
     adminMode = false;
     Serial.println("[BTN] Admin mode timed out");
@@ -563,22 +654,16 @@ void loop() {
   // ── WiFi watchdog ─────────────────────────────────────────
   if (now - lastWifiMs > WIFI_CHECK_MS) {
     lastWifiMs = now;
-    if (WiFi.status() != WL_CONNECTED) {
-      wifiOk = false;
-      connectWiFi();
-    }
+    bool wasOk = wifiOk;
+    if (WiFi.status() != WL_CONNECTED) { wifiOk = false; connectWiFi(); }
+    if (!wasOk && wifiOk) updateClock();  // refresh hint on reconnect
   }
 
-  // ── Sync offline queue when WiFi restores ─────────────────
-  if (wifiOk && offlineCount > 0) {
-    uploadOffline();
-  }
+  // ── Sync offline queue on WiFi restore ────────────────────
+  if (wifiOk && offlineCount > 0) uploadOffline();
 
-  // ── Live clock update every second ────────────────────────
-  if (now - lastClockMs > 1000) {
-    lastClockMs = now;
-    updateClock();
-  }
+  // ── Clock update (1 s) ────────────────────────────────────
+  if (now - lastClockMs > 1000) { lastClockMs = now; updateClock(); }
 
   // ── RFID poll ─────────────────────────────────────────────
   if (!rfid.PICC_IsNewCardPresent()) return;
@@ -586,21 +671,18 @@ void loop() {
 
   String uid = readUID();
 
-  // Debounce: ignore same card within 4 s
+  // Debounce: ignore same card within SCAN_DEBOUNCE_MS
   if (uid == lastUID && (now - lastScanMs) < SCAN_DEBOUNCE_MS) {
     rfid.PICC_HaltA();
     return;
   }
-  lastUID   = uid;
+  lastUID    = uid;
   lastScanMs = now;
 
   Serial.printf("[RFID] Card: %s  Admin:%d\n", uid.c_str(), adminMode);
 
-  if (adminMode) {
-    processAdmin(uid);
-  } else {
-    processNormal(uid);
-  }
+  if (adminMode) processAdmin(uid);
+  else           processNormal(uid);
 
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();

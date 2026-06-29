@@ -103,10 +103,10 @@ tr:hover td{background:#F8FAFC}
 /* ── Badges ── */
 .badge{display:inline-flex;align-items:center;font-size:11px;font-weight:700;
   padding:2px 8px;border-radius:20px;white-space:nowrap}
-.b-in {background:#D1FAE5;color:#065F46}
-.b-out{background:#DBEAFE;color:#1E40AF}
+.b-in  {background:#D1FAE5;color:#065F46}
+.b-out {background:#DBEAFE;color:#1E40AF}
 .b-late{background:#FEF3C7;color:#92400E}
-.b-abs{background:#FEE2E2;color:#991B1B}
+.b-abs {background:#FEE2E2;color:#991B1B}
 
 /* ── Toolbar ── */
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:14px}
@@ -139,15 +139,15 @@ tr:hover td{background:#F8FAFC}
 <body>
 
 <header>
-  <div class="logo">TechSei Attendance <span>Smart RFID System</span></div>
+  <div class="logo">TechSei Attendance <span>Smart RFID System v4.1</span></div>
   <div id="clock">--:--:--</div>
 </header>
 
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('admin')">⚙ Admin</div>
-  <div class="tab" onclick="switchTab('today')">📋 Today</div>
-  <div class="tab" onclick="switchTab('roster')">👥 Roster</div>
-  <div class="tab" onclick="switchTab('stats')">📊 Stats</div>
+  <div class="tab active" onclick="switchTab('admin',this)">Admin</div>
+  <div class="tab" onclick="switchTab('today',this)">Today</div>
+  <div class="tab" onclick="switchTab('roster',this)">Roster</div>
+  <div class="tab" onclick="switchTab('stats',this)">Stats</div>
 </div>
 
 <div class="page">
@@ -190,7 +190,7 @@ tr:hover td{background:#F8FAFC}
         </div>
         <div class="form-row">
           <label>Full Name *</label>
-          <input id="eName" type="text" placeholder="e.g. Arjun Kumar">
+          <input id="eName" type="text" placeholder="e.g. Maria Cruz">
         </div>
         <div class="form-row">
           <label>Branch / School</label>
@@ -202,46 +202,46 @@ tr:hover td{background:#F8FAFC}
         </div>
         <div class="form-row">
           <label>Contact Number</label>
-          <input id="eContact" type="text" placeholder="e.g. 9876543210">
+          <input id="eContact" type="text" placeholder="e.g. 09171234567">
         </div>
 
         <!-- Student-specific -->
         <div class="form-row student-field">
           <label>Course</label>
-          <input id="eCourse" type="text" placeholder="e.g. B.E. ECE">
+          <input id="eCourse" type="text" placeholder="e.g. BS Computer Science">
         </div>
         <div class="form-row student-field">
           <label>Batch / Year</label>
           <input id="eBatch" type="text" placeholder="e.g. 2022–2026">
         </div>
         <div class="form-row student-field">
-          <label>Instructor / Advisor</label>
-          <input id="eInstructor" type="text" placeholder="e.g. Dr. Rajan">
+          <label>Instructor / Adviser</label>
+          <input id="eInstructor" type="text" placeholder="e.g. Dr. Reyes">
         </div>
         <div class="form-row student-field">
-          <label>Parent Phone</label>
-          <input id="eParent" type="text" placeholder="e.g. 9876543210">
+          <label>Parent / Guardian Phone</label>
+          <input id="eParent" type="text" placeholder="e.g. 09181234567">
         </div>
 
         <!-- Staff-specific -->
         <div class="form-row staff-field" style="display:none">
           <label>Role / Designation</label>
-          <input id="eRole" type="text" placeholder="e.g. Lab Assistant">
+          <input id="eRole" type="text" placeholder="e.g. Lab Technician">
         </div>
         <div class="form-row staff-field" style="display:none">
           <label>Department</label>
-          <input id="eDept" type="text" placeholder="e.g. Electronics">
+          <input id="eDept" type="text" placeholder="e.g. Electronics Lab">
         </div>
 
         <!-- Others -->
         <div class="form-row other-field form-full" style="display:none">
-          <label>Note / Reason</label>
+          <label>Note / Reason for Visit</label>
           <input id="eNote" type="text" placeholder="e.g. Visitor, Contractor…">
         </div>
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-green" onclick="submitEnroll()">💾 Save Card</button>
+        <button class="btn btn-green" onclick="submitEnroll()">Save Card</button>
         <button class="btn btn-ghost" onclick="cancelEnroll()">Cancel</button>
       </div>
     </div>
@@ -250,16 +250,16 @@ tr:hover td{background:#F8FAFC}
     <div class="card">
       <div class="card-head">
         <div class="card-title">Today's Activity</div>
-        <button class="btn btn-ghost btn-sm" onclick="loadToday()">↻ Refresh</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadToday()">Refresh</button>
       </div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
             <th>Time</th><th>Name</th><th>Branch</th><th>Course / Role</th>
-            <th>Action</th><th>Hours</th>
+            <th>Event</th><th>Status</th><th>Hours</th>
           </tr></thead>
           <tbody id="todayBody">
-            <tr><td colspan="6" class="empty">Loading…</td></tr>
+            <tr><td colspan="7" class="empty">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -288,10 +288,10 @@ tr:hover td{background:#F8FAFC}
         <table>
           <thead><tr>
             <th>Date</th><th>Name</th><th>Branch</th><th>Course / Dept</th>
-            <th>In</th><th>Out</th><th>Hours</th>
+            <th>In</th><th>Out</th><th>Status</th><th>Hours</th>
           </tr></thead>
           <tbody id="attBody">
-            <tr><td colspan="7" class="empty">Select a date and click Filter</td></tr>
+            <tr><td colspan="8" class="empty">Select a date and click Filter</td></tr>
           </tbody>
         </table>
       </div>
@@ -333,11 +333,11 @@ tr:hover td{background:#F8FAFC}
       <div class="type-tab" onclick="setStatsType('Staff',this)">Staff</div>
       <div class="type-tab" onclick="setStatsType('Others',this)">Others</div>
     </div>
-    <div class="stats" id="statsCards">
+    <div class="stats">
       <div class="stat s1"><div class="n" id="stPresent">—</div><div class="l">Present</div></div>
+      <div class="stat s2"><div class="n" id="stLate">—</div><div class="l">Late</div></div>
       <div class="stat s3"><div class="n" id="stAbsent">—</div><div class="l">Absent</div></div>
-      <div class="stat s4"><div class="n" id="stTotal">—</div><div class="l">Total</div></div>
-      <div class="stat s2"><div class="n" id="stRate">—</div><div class="l">Attendance %</div></div>
+      <div class="stat s4"><div class="n" id="stRate">—</div><div class="l">Attendance %</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="card">
@@ -367,8 +367,7 @@ let statsType = 'Student';
 window.addEventListener('DOMContentLoaded', () => {
   tick();
   setInterval(tick, 1000);
-  const today = fmtDate(new Date());
-  document.getElementById('attDate').value = toInputDate(today);
+  document.getElementById('attDate').value = toInputDate(fmtDate(new Date()));
   loadStats();
   loadToday();
   loadRoster();
@@ -381,11 +380,11 @@ function tick() {
 }
 
 // ── Tabs ──────────────────────────────────────────────────────
-function switchTab(name) {
+function switchTab(name, el) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('sec-' + name).classList.add('active');
-  event.target.classList.add('active');
+  if (el) el.classList.add('active');
   if (name === 'today')  loadAttendance();
   if (name === 'roster') loadRoster();
   if (name === 'stats')  loadStatsTab();
@@ -396,7 +395,7 @@ function loadStats() {
   gas('stats', {type: 'Student'}).then(d => {
     if (!d.ok) return;
     set('sPresent', d.presentToday);
-    set('sLate',    '—');
+    set('sLate',    d.lateToday !== undefined ? d.lateToday : '—');
     set('sAbsent',  d.absentToday);
     set('sTotal',   d.total);
   });
@@ -408,19 +407,21 @@ function loadToday() {
   gas('getAttendance', {type: 'Student', date: today}).then(d => {
     const tbody = document.getElementById('todayBody');
     if (!d.ok || !d.rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">No records yet today</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No records yet today</td></tr>';
       return;
     }
     tbody.innerHTML = d.rows.map(r => {
-      const badge = r.inTime && !r.outTime ? '<span class="badge b-in">IN</span>' :
-                    r.outTime              ? '<span class="badge b-out">OUT</span>' : '';
+      const evBadge = r.inTime && !r.outTime
+        ? '<span class="badge b-in">IN</span>'
+        : r.outTime ? '<span class="badge b-out">OUT</span>' : '—';
       return `<tr>
-        <td>${r.inTime || r.outTime || '—'}</td>
+        <td>${esc(r.inTime || r.outTime || '—')}</td>
         <td><b>${esc(r.name)}</b></td>
         <td>${esc(r.branch)}</td>
         <td>${esc(r.sub)}</td>
-        <td>${badge}</td>
-        <td>${r.hours || '—'}</td>
+        <td>${evBadge}</td>
+        <td>${statusBadge(r.status)}</td>
+        <td>${r.hours ? r.hours + ' h' : '—'}</td>
       </tr>`;
     }).join('');
   });
@@ -434,7 +435,7 @@ function toggleAdminMode() {
     updateAdminUI();
     if (adminOn) {
       pollTimer = setInterval(pollPending, 2000);
-      toast('Admin mode ON — hold BOOT button on device for 1 s');
+      toast('Admin mode ON — hold BOOT button on device for 1 s to activate');
     } else {
       clearInterval(pollTimer);
       hideEnroll();
@@ -453,7 +454,7 @@ function updateAdminUI() {
     bar.classList.add('active');
     dot.className = 'dot dot-on';
     lbl.textContent = 'Admin Mode ACTIVE';
-    hint.textContent = 'Scan a card on the device to enrol it';
+    hint.textContent = 'Scan a card on the device to enrol it here';
     btn.textContent = 'Disable';
     btn.className = 'btn btn-red';
   } else {
@@ -491,7 +492,7 @@ function showEnroll(uid, known) {
     document.getElementById('eDept').value       = known.department || '';
     document.getElementById('eNote').value       = known.note       || '';
     typeChanged();
-    toast('Card found in roster — you can update details');
+    toast('Card already enrolled — you can update details');
   } else {
     toast('New card scanned — fill in details and save');
   }
@@ -536,7 +537,7 @@ function submitEnroll() {
 
   gas('enroll', params).then(d => {
     if (d.ok) {
-      toast('✓ ' + name + ' enrolled successfully!');
+      toast('Saved: ' + name);
       hideEnroll();
       loadRoster();
     } else {
@@ -545,16 +546,13 @@ function submitEnroll() {
   });
 }
 
-function cancelEnroll() {
-  hideEnroll();
-  gas('getPending', {}).then(() => {}); // don't clear pending from server
-}
+function cancelEnroll() { hideEnroll(); }
 
 // ── ATTENDANCE TAB ───────────────────────────────────────────
 function setType(t, el) {
   curType = t;
   document.querySelectorAll('#sec-today .type-tab').forEach(e => e.classList.remove('active'));
-  el.classList.add('active');
+  if (el) el.classList.add('active');
   loadAttendance();
 }
 
@@ -565,19 +563,22 @@ function loadAttendance() {
 
   gas('getAttendance', {type: curType, date}).then(d => {
     const tbody = document.getElementById('attBody');
-    if (!d.ok) { tbody.innerHTML = '<tr><td colspan="7" class="empty">Error loading</td></tr>'; return; }
+    if (!d.ok) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">Error loading</td></tr>';
+      return;
+    }
 
     let rows = d.rows || [];
     if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search));
     document.getElementById('attCount').textContent = rows.length + ' records';
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">No records found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No records found</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(r => {
-      const inBadge  = r.inTime  ? `<span class="badge b-in">${r.inTime}</span>`  : '—';
-      const outBadge = r.outTime ? `<span class="badge b-out">${r.outTime}</span>` : '—';
+      const inBadge  = r.inTime  ? `<span class="badge b-in">${esc(r.inTime)}</span>`  : '—';
+      const outBadge = r.outTime ? `<span class="badge b-out">${esc(r.outTime)}</span>` : '—';
       return `<tr>
         <td>${esc(r.date)}</td>
         <td><b>${esc(r.name)}</b></td>
@@ -585,6 +586,7 @@ function loadAttendance() {
         <td>${esc(r.sub)}</td>
         <td>${inBadge}</td>
         <td>${outBadge}</td>
+        <td>${statusBadge(r.status)}</td>
         <td>${r.hours ? r.hours + ' h' : '—'}</td>
       </tr>`;
     }).join('');
@@ -610,7 +612,7 @@ function filterRoster() {
   const q  = document.getElementById('rosterSearch').value.toLowerCase();
   const tp = document.getElementById('rosterType').value;
   const filtered = allRoster.filter(r => {
-    const match = (r.name + ' ' + r.uid + ' ' + r.idNumber).toLowerCase().includes(q);
+    const match  = (r.name + ' ' + r.uid + ' ' + r.idNumber).toLowerCase().includes(q);
     const typeOk = !tp || r.type === tp;
     return match && typeOk;
   });
@@ -632,7 +634,8 @@ function renderRoster(list) {
     <td>${esc(r.contact)}</td>
     <td>${esc(r.course || r.role || r.note)}</td>
     <td>
-      <button class="btn btn-red btn-sm" onclick="deleteCard('${esc(r.uid)}','${esc(r.name)}')">Delete</button>
+      <button class="btn btn-red btn-sm"
+        onclick="deleteCard('${esc(r.uid)}','${esc(r.name)}')">Delete</button>
     </td>
   </tr>`).join('');
 }
@@ -649,7 +652,7 @@ function deleteCard(uid, name) {
 function setStatsType(t, el) {
   statsType = t;
   document.querySelectorAll('#sec-stats .type-tab').forEach(e => e.classList.remove('active'));
-  el.classList.add('active');
+  if (el) el.classList.add('active');
   loadStatsTab();
 }
 
@@ -658,14 +661,14 @@ function loadStatsTab() {
     if (!d.ok) return;
     const rate = d.total ? Math.round(d.presentToday / d.total * 100) : 0;
     set('stPresent', d.presentToday);
+    set('stLate',    d.lateToday !== undefined ? d.lateToday : '—');
     set('stAbsent',  d.absentToday);
-    set('stTotal',   d.total);
     set('stRate',    rate + '%');
 
     // Absentees
     const al = document.getElementById('absentList');
     if (!d.absentees.length) {
-      al.innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">All present! 🎉</div>';
+      al.innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">All present!</div>';
     } else {
       al.innerHTML = d.absentees.map(a => `
         <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
@@ -674,7 +677,7 @@ function loadStatsTab() {
         </div>`).join('');
     }
 
-    // By group
+    // By group bar chart
     const gl = document.getElementById('groupList');
     const groups = Object.entries(d.byGroup || {});
     if (!groups.length) {
@@ -694,7 +697,21 @@ function loadStatsTab() {
   });
 }
 
-// ── GAS FETCH HELPER ─────────────────────────────────────────
+// ── STATUS BADGE ─────────────────────────────────────────────
+function statusBadge(s) {
+  const map = {
+    'LATE':      ['#FEF3C7','#92400E','Late'],
+    'EARLY_ARR': ['#E8F4FD','#1E40AF','Early Arr.'],
+    'OVERTIME':  ['#EDE9FE','#5B21B6','Overtime'],
+    'EARLY_DEP': ['#FEE2E2','#991B1B','Early Dep.'],
+    'ON_TIME':   ['#D1FAE5','#065F46','On Time'],
+  };
+  if (!s) return '<span style="color:var(--muted);font-size:12px">—</span>';
+  const cfg = map[s] || ['#F1F5F9','#64748B', s];
+  return `<span class="badge" style="background:${cfg[0]};color:${cfg[1]}">${cfg[2]}</span>`;
+}
+
+// ── GAS FETCH ─────────────────────────────────────────────────
 function gas(action, params) {
   const url = new URL(BASE);
   url.searchParams.set('action', action);
@@ -707,15 +724,15 @@ function gas(action, params) {
 // ── UTILS ────────────────────────────────────────────────────
 function fmtDate(d) {
   const z = n => String(n).padStart(2,'0');
-  return z(d.getDate())+'/'+z(d.getMonth()+1)+'/'+d.getFullYear();
+  return z(d.getDate()) + '/' + z(d.getMonth()+1) + '/' + d.getFullYear();
 }
 function toInputDate(dd_mm_yyyy) {
   const [d,m,y] = dd_mm_yyyy.split('/');
-  return y+'-'+m+'-'+d;
+  return y + '-' + m + '-' + d;
 }
 function inputToFmt(yyyy_mm_dd) {
   const [y,m,d] = yyyy_mm_dd.split('-');
-  return d+'/'+m+'/'+y;
+  return d + '/' + m + '/' + y;
 }
 function set(id, v) { document.getElementById(id).textContent = v; }
 function esc(s) {
@@ -727,7 +744,7 @@ function toast(msg) {
   setTimeout(() => el.style.display = 'none', 3500);
 }
 
-typeChanged(); // init form visibility
+typeChanged(); // init form field visibility
 </script>
 </body>
 </html>

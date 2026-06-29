@@ -1,488 +1,733 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Attendance Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <style>
-    :root {
-      --brand:   #4F46E5;
-      --green:   #10B981;
-      --amber:   #F59E0B;
-      --red:     #EF4444;
-      --blue:    #3B82F6;
-      --bg:      #F1F5F9;
-      --card:    #FFFFFF;
-      --text:    #1E293B;
-      --muted:   #64748B;
-      --border:  #E2E8F0;
-      --radius:  12px;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TechSei Attendance</title>
+<style>
+:root{
+  --brand:#2563EB;--brand2:#1D4ED8;--green:#16A34A;--red:#DC2626;
+  --amber:#D97706;--bg:#F1F5F9;--card:#fff;--text:#1E293B;--muted:#64748B;
+  --border:#E2E8F0;--r:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif}
+body{background:var(--bg);color:var(--text);min-height:100vh}
 
-    /* ── Header ── */
-    .header {
-      background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
-      color: #fff; padding: 0 24px;
-      display: flex; align-items: center; justify-content: space-between;
-      height: 64px; position: sticky; top: 0; z-index: 100;
-      box-shadow: 0 2px 12px rgba(79,70,229,.35);
-    }
-    .header-left { display: flex; align-items: center; gap: 12px; }
-    .logo { width: 38px; height: 38px; background: rgba(255,255,255,.18); border-radius: 10px;
-            display: flex; align-items: center; justify-content: center; font-size: 20px; }
-    .header h1 { font-size: 16px; font-weight: 700; }
-    .header p  { font-size: 11px; opacity: .75; margin-top: 2px; }
-    .live-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; opacity: .9; }
-    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #34D399;
-                animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.85)} }
+/* ── Header ── */
+header{background:linear-gradient(135deg,#1E3A8A,#2563EB);color:#fff;
+  padding:0 20px;height:56px;display:flex;align-items:center;
+  justify-content:space-between;position:sticky;top:0;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.logo{font-size:17px;font-weight:700;letter-spacing:.3px}
+.logo span{opacity:.65;font-weight:400;font-size:13px;margin-left:8px}
+#clock{font-size:13px;opacity:.85;font-variant-numeric:tabular-nums}
 
-    /* ── Layout ── */
-    .page { max-width: 1280px; margin: 0 auto; padding: 20px 16px; }
-    .toolbar { background: var(--card); border-radius: var(--radius); padding: 14px 16px;
-               display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
-               margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
-    .field input, .field select {
-      border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px;
-      font-size: 13px; color: var(--text); outline: none; height: 36px;
-      font-family: inherit; transition: border .2s;
-    }
-    .field input:focus, .field select:focus { border-color: var(--brand); }
-    .btn { height: 36px; padding: 0 14px; border: none; border-radius: 8px;
-           font-size: 13px; font-weight: 500; cursor: pointer; transition: opacity .15s; }
-    .btn:hover { opacity: .88; }
-    .btn-primary  { background: var(--brand); color: #fff; }
-    .btn-ghost    { background: var(--bg); color: var(--muted); }
-    .btn-green    { background: var(--green); color: #fff; }
-    .btn-sm { height: 30px; padding: 0 10px; font-size: 12px; }
-    .ml-auto { margin-left: auto; }
+/* ── Tabs ── */
+.tabs{display:flex;background:#fff;border-bottom:2px solid var(--border);
+  padding:0 16px;gap:2px}
+.tab{padding:12px 18px;font-size:14px;font-weight:500;cursor:pointer;
+  border-bottom:3px solid transparent;color:var(--muted);transition:.2s;
+  margin-bottom:-2px}
+.tab.active{color:var(--brand);border-color:var(--brand)}
+.tab:hover:not(.active){color:var(--text)}
 
-    /* ── Stat Cards ── */
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-    @media(max-width:700px){ .stats{ grid-template-columns: repeat(2,1fr); } }
-    .stat-card {
-      border-radius: var(--radius); padding: 16px 18px; color: #fff;
-      box-shadow: 0 4px 16px rgba(0,0,0,.12); position: relative; overflow: hidden;
-    }
-    .stat-card::after { content:''; position:absolute; top:-20px; right:-20px;
-      width:80px; height:80px; border-radius:50%; background:rgba(255,255,255,.12); }
-    .stat-card .val { font-size: 32px; font-weight: 700; line-height: 1; }
-    .stat-card .lbl { font-size: 12px; opacity: .85; margin-top: 4px; }
-    .stat-card .ico { position:absolute; top:14px; right:16px; font-size:22px; opacity:.6; }
-    .sc-present { background: linear-gradient(135deg,#10B981,#34D399); }
-    .sc-late    { background: linear-gradient(135deg,#F59E0B,#FCD34D); }
-    .sc-absent  { background: linear-gradient(135deg,#EF4444,#FCA5A5); }
-    .sc-total   { background: linear-gradient(135deg,#3B82F6,#93C5FD); }
+/* ── Page ── */
+.page{max-width:1100px;margin:0 auto;padding:16px}
 
-    /* ── Main grid ── */
-    .grid2 { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
-    @media(max-width:900px){ .grid2{ grid-template-columns:1fr; } }
+/* ── Cards ── */
+.card{background:var(--card);border-radius:var(--r);
+  box-shadow:0 1px 4px rgba(0,0,0,.07);overflow:hidden;margin-bottom:16px}
+.card-head{padding:14px 18px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:14px;font-weight:600}
+.card-body{padding:16px}
 
-    /* ── Table Card ── */
-    .card { background: var(--card); border-radius: var(--radius);
-            box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
-    .card-header { padding: 14px 18px; border-bottom: 1px solid var(--border);
-                   display: flex; align-items: center; justify-content: space-between; }
-    .card-title { font-size: 14px; font-weight: 600; }
-    .card-sub   { font-size: 12px; color: var(--muted); }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600;
-         color: var(--muted); background: #F8FAFC; text-transform: uppercase; letter-spacing: .5px;
-         border-bottom: 1px solid var(--border); white-space: nowrap; }
-    td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #F8FAFC; }
-    .empty-state { text-align:center; padding: 40px; color: var(--muted); font-size: 14px; }
-    .empty-state span { display:block; font-size:32px; margin-bottom:8px; }
+/* ── Stat row ── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{border-radius:var(--r);padding:16px;color:#fff;position:relative;overflow:hidden}
+.stat::after{content:'';position:absolute;top:-16px;right:-16px;
+  width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,.12)}
+.stat .n{font-size:28px;font-weight:700}
+.stat .l{font-size:11px;opacity:.82;margin-top:3px}
+.s1{background:linear-gradient(135deg,#16A34A,#4ADE80)}
+.s2{background:linear-gradient(135deg,#D97706,#FCD34D)}
+.s3{background:linear-gradient(135deg,#DC2626,#FCA5A5)}
+.s4{background:linear-gradient(135deg,#2563EB,#93C5FD)}
 
-    /* ── Badges ── */
-    .badge { display:inline-flex; align-items:center; gap:4px; font-size:11px;
-             font-weight:600; padding:2px 8px; border-radius:20px; white-space:nowrap; }
-    .b-in    { background:#D1FAE5; color:#065F46; }
-    .b-out   { background:#DBEAFE; color:#1E40AF; }
-    .b-abs   { background:#FEE2E2; color:#991B1B; }
-    .b-unk   { background:#F3F4F6; color:#374151; }
-    .b-late  { background:#FEF3C7; color:#92400E; }
-    .b-ot    { background:#EDE9FE; color:#5B21B6; }
+/* ── Admin panel ── */
+.admin-bar{display:flex;align-items:center;gap:12px;padding:14px 18px;
+  background:#EFF6FF;border:2px solid #BFDBFE;border-radius:var(--r);margin-bottom:16px}
+.admin-bar.active{background:#FEF3C7;border-color:#FDE68A}
+.admin-label{flex:1;font-size:14px;font-weight:600}
+.admin-hint{font-size:12px;color:var(--muted)}
 
-    /* ── Sidebar ── */
-    .sidebar { display: flex; flex-direction: column; gap: 16px; }
+/* ── Enroll panel ── */
+#enrollPanel{display:none;background:#FFF7ED;border:2px solid #FED7AA;
+  border-radius:var(--r);padding:18px;margin-bottom:16px}
+.enroll-uid{font-size:13px;font-weight:600;color:var(--amber);
+  background:#FEF3C7;padding:6px 12px;border-radius:6px;
+  margin-bottom:14px;display:inline-block;letter-spacing:1px}
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(max-width:580px){.form-grid{grid-template-columns:1fr}}
+.form-row{display:flex;flex-direction:column;gap:4px}
+.form-row label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase}
+.form-row input,.form-row select{
+  border:1px solid var(--border);border-radius:7px;padding:8px 11px;
+  font-size:13px;outline:none;transition:border .15s}
+.form-row input:focus,.form-row select:focus{border-color:var(--brand)}
+.form-full{grid-column:1/-1}
 
-    /* ── Live Feed ── */
-    .feed-list { max-height: 280px; overflow-y: auto; }
-    .feed-item { display:flex; align-items:flex-start; gap:10px; padding:10px 16px;
-                 border-bottom:1px solid var(--border); }
-    .feed-item:last-child { border-bottom:none; }
-    .feed-dot { width:8px; height:8px; border-radius:50%; margin-top:5px; flex-shrink:0; }
-    .fd-in  { background:var(--green); }
-    .fd-out { background:var(--blue); }
-    .fd-abs { background:var(--red); }
-    .feed-name { font-size:13px; font-weight:500; }
-    .feed-meta { font-size:11px; color:var(--muted); margin-top:1px; }
+/* ── Buttons ── */
+.btn{padding:8px 16px;border:none;border-radius:7px;font-size:13px;
+  font-weight:600;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-primary{background:var(--brand);color:#fff}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-ghost{background:var(--bg);color:var(--muted)}
+.btn-sm{padding:5px 11px;font-size:12px}
+.btn-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
 
-    /* ── Chart ── */
-    .chart-wrap { padding: 16px; }
+/* ── Table ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{padding:9px 12px;text-align:left;font-size:11px;font-weight:700;
+  color:var(--muted);background:#F8FAFC;text-transform:uppercase;
+  border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#F8FAFC}
+.empty{text-align:center;padding:32px;color:var(--muted);font-size:14px}
 
-    /* ── Weekly Bar ── */
-    .weekly-wrap { padding:16px; }
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;font-size:11px;font-weight:700;
+  padding:2px 8px;border-radius:20px;white-space:nowrap}
+.b-in {background:#D1FAE5;color:#065F46}
+.b-out{background:#DBEAFE;color:#1E40AF}
+.b-late{background:#FEF3C7;color:#92400E}
+.b-abs{background:#FEE2E2;color:#991B1B}
 
-    /* ── Toast ── */
-    #toast { position:fixed; bottom:20px; right:20px; background:#1E293B; color:#fff;
-             padding:10px 18px; border-radius:10px; font-size:13px; box-shadow:0 4px 16px rgba(0,0,0,.2);
-             display:none; z-index:9999; animation:slidein .25s ease; }
-    @keyframes slidein{ from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+/* ── Toolbar ── */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:14px}
+.toolbar input,.toolbar select{
+  border:1px solid var(--border);border-radius:7px;padding:7px 11px;
+  font-size:13px;outline:none;height:34px}
+.toolbar input:focus,.toolbar select:focus{border-color:var(--brand)}
 
-    /* ── Loader ── */
-    .loader { display:inline-block; width:16px; height:16px; border:2px solid var(--border);
-              border-top-color:var(--brand); border-radius:50%; animation:spin .7s linear infinite; }
-    @keyframes spin{ to{transform:rotate(360deg)} }
+/* ── Type tabs ── */
+.type-tabs{display:flex;gap:6px;margin-bottom:14px}
+.type-tab{padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;
+  cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--muted)}
+.type-tab.active{background:var(--brand);color:#fff;border-color:var(--brand)}
 
-    /* ── Time ── */
-    #clockDisplay { font-size:13px; font-weight:600; letter-spacing:.5px; }
-  </style>
+/* ── Dot ── */
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot-on{background:#22C55E;animation:pulse 1.5s infinite}
+.dot-off{background:var(--muted)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:20px;right:20px;background:#1E293B;color:#fff;
+  padding:10px 18px;border-radius:8px;font-size:13px;
+  box-shadow:0 4px 16px rgba(0,0,0,.2);display:none;z-index:9999}
+
+.section{display:none}
+.section.active{display:block}
+</style>
 </head>
 <body>
 
-<!-- ══ Header ══ -->
-<header class="header">
-  <div class="header-left">
-    <div class="logo">📡</div>
-    <div>
-      <h1>Smart Attendance System</h1>
-      <p>RFID · Google Sheets · Real-time Dashboard</p>
-    </div>
-  </div>
-  <div class="live-badge">
-    <span class="live-dot"></span>
-    <span id="clockDisplay">--:--:--</span>
-  </div>
+<header>
+  <div class="logo">TechSei Attendance <span>Smart RFID System</span></div>
+  <div id="clock">--:--:--</div>
 </header>
 
-<!-- ══ Page ══ -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('admin')">⚙ Admin</div>
+  <div class="tab" onclick="switchTab('today')">📋 Today</div>
+  <div class="tab" onclick="switchTab('roster')">👥 Roster</div>
+  <div class="tab" onclick="switchTab('stats')">📊 Stats</div>
+</div>
+
 <div class="page">
 
-  <!-- Toolbar -->
-  <div class="toolbar">
-    <div class="field">
-      <label>Date</label>
-      <input type="date" id="filterDate">
-    </div>
-    <div class="field">
-      <label>Search Name</label>
-      <input type="text" id="filterName" placeholder="e.g. John" style="width:160px">
-    </div>
-    <div class="field">
-      <label>Department</label>
-      <input type="text" id="filterDept" placeholder="e.g. IT" style="width:130px">
-    </div>
-    <button class="btn btn-primary" onclick="loadRecords()">Filter</button>
-    <button class="btn btn-ghost"   onclick="clearFilters()">Clear</button>
-    <button class="btn btn-green"   onclick="exportData()">⬇ Export CSV</button>
-    <div class="ml-auto">
-      <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshBtn">↻ Refresh</button>
-    </div>
-  </div>
+  <!-- ══ ADMIN TAB ══ -->
+  <div class="section active" id="sec-admin">
 
-  <!-- Stat Cards -->
-  <div class="stats">
-    <div class="stat-card sc-present">
-      <div class="ico">✅</div>
-      <div class="val" id="sPresent">—</div>
-      <div class="lbl">Present Today</div>
+    <div class="stats">
+      <div class="stat s1"><div class="n" id="sPresent">—</div><div class="l">Present Today</div></div>
+      <div class="stat s2"><div class="n" id="sLate">—</div><div class="l">Late Arrivals</div></div>
+      <div class="stat s3"><div class="n" id="sAbsent">—</div><div class="l">Absent Today</div></div>
+      <div class="stat s4"><div class="n" id="sTotal">—</div><div class="l">Total Enrolled</div></div>
     </div>
-    <div class="stat-card sc-late">
-      <div class="ico">⏰</div>
-      <div class="val" id="sLate">—</div>
-      <div class="lbl">Late Arrivals</div>
-    </div>
-    <div class="stat-card sc-absent">
-      <div class="ico">❌</div>
-      <div class="val" id="sAbsent">—</div>
-      <div class="lbl">Absent Today</div>
-    </div>
-    <div class="stat-card sc-total">
-      <div class="ico">🔢</div>
-      <div class="val" id="sCheckouts">—</div>
-      <div class="lbl">Check-Outs Today</div>
-    </div>
-  </div>
 
-  <!-- Main Grid -->
-  <div class="grid2">
+    <!-- Admin mode toggle -->
+    <div class="admin-bar" id="adminBar">
+      <div>
+        <div class="admin-label">
+          <span class="dot dot-off" id="adminDot"></span>&nbsp;
+          <span id="adminLabel">Admin Enrolment Mode</span>
+        </div>
+        <div class="admin-hint" id="adminHint">Enable to allow card enrolment from the device</div>
+      </div>
+      <button class="btn btn-primary" id="adminToggleBtn" onclick="toggleAdminMode()">Enable</button>
+    </div>
 
-    <!-- Records Table -->
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">Attendance Records</div>
-          <div class="card-sub" id="recCount">Loading…</div>
+    <!-- Pending card enrolment form -->
+    <div id="enrollPanel">
+      <div style="margin-bottom:10px;font-size:14px;font-weight:600">New Card Detected</div>
+      <div class="enroll-uid" id="pendingUID">—</div>
+
+      <div class="form-grid">
+        <div class="form-row">
+          <label>Type *</label>
+          <select id="eType" onchange="typeChanged()">
+            <option value="Student">Student</option>
+            <option value="Staff">Staff</option>
+            <option value="Others">Others</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Full Name *</label>
+          <input id="eName" type="text" placeholder="e.g. Arjun Kumar">
+        </div>
+        <div class="form-row">
+          <label>Branch / School</label>
+          <input id="eBranch" type="text" placeholder="e.g. ECE">
+        </div>
+        <div class="form-row">
+          <label>ID Number</label>
+          <input id="eID" type="text" placeholder="e.g. 2024ECE001">
+        </div>
+        <div class="form-row">
+          <label>Contact Number</label>
+          <input id="eContact" type="text" placeholder="e.g. 9876543210">
+        </div>
+
+        <!-- Student-specific -->
+        <div class="form-row student-field">
+          <label>Course</label>
+          <input id="eCourse" type="text" placeholder="e.g. B.E. ECE">
+        </div>
+        <div class="form-row student-field">
+          <label>Batch / Year</label>
+          <input id="eBatch" type="text" placeholder="e.g. 2022–2026">
+        </div>
+        <div class="form-row student-field">
+          <label>Instructor / Advisor</label>
+          <input id="eInstructor" type="text" placeholder="e.g. Dr. Rajan">
+        </div>
+        <div class="form-row student-field">
+          <label>Parent Phone</label>
+          <input id="eParent" type="text" placeholder="e.g. 9876543210">
+        </div>
+
+        <!-- Staff-specific -->
+        <div class="form-row staff-field" style="display:none">
+          <label>Role / Designation</label>
+          <input id="eRole" type="text" placeholder="e.g. Lab Assistant">
+        </div>
+        <div class="form-row staff-field" style="display:none">
+          <label>Department</label>
+          <input id="eDept" type="text" placeholder="e.g. Electronics">
+        </div>
+
+        <!-- Others -->
+        <div class="form-row other-field form-full" style="display:none">
+          <label>Note / Reason</label>
+          <input id="eNote" type="text" placeholder="e.g. Visitor, Contractor…">
         </div>
       </div>
-      <div class="table-wrap">
+
+      <div class="btn-row">
+        <button class="btn btn-green" onclick="submitEnroll()">💾 Save Card</button>
+        <button class="btn btn-ghost" onclick="cancelEnroll()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Recent activity -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">Today's Activity</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadToday()">↻ Refresh</button>
+      </div>
+      <div class="tbl-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Name</th>
-              <th>Department</th>
-              <th>Action</th>
-              <th>Status</th>
-              <th>Hours</th>
-              <th>Device</th>
-            </tr>
-          </thead>
-          <tbody id="tableBody">
-            <tr><td colspan="7" class="empty-state">
-              <span>⏳</span>Loading records…
-            </td></tr>
+          <thead><tr>
+            <th>Time</th><th>Name</th><th>Branch</th><th>Course / Role</th>
+            <th>Action</th><th>Hours</th>
+          </tr></thead>
+          <tbody id="todayBody">
+            <tr><td colspan="6" class="empty">Loading…</td></tr>
           </tbody>
         </table>
       </div>
     </div>
+  </div>
 
-    <!-- Sidebar -->
-    <div class="sidebar">
-
-      <!-- Live Feed -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Live Feed</div>
-          <span class="live-dot" style="width:8px;height:8px;border-radius:50%;background:#34D399;animation:pulse 1.5s infinite"></span>
-        </div>
-        <div class="feed-list" id="liveFeed">
-          <div class="empty-state"><span>📭</span>No activity yet</div>
-        </div>
+  <!-- ══ TODAY TAB ══ -->
+  <div class="section" id="sec-today">
+    <div class="type-tabs">
+      <div class="type-tab active" onclick="setType('Student',this)">Students</div>
+      <div class="type-tab" onclick="setType('Staff',this)">Staff</div>
+      <div class="type-tab" onclick="setType('Others',this)">Others</div>
+    </div>
+    <div class="toolbar">
+      <input type="date" id="attDate">
+      <input type="text" id="attSearch" placeholder="Search name…" style="width:160px">
+      <button class="btn btn-primary" onclick="loadAttendance()">Filter</button>
+      <button class="btn btn-ghost" onclick="clearAttFilter()">Clear</button>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">Attendance Records</div>
+        <span id="attCount" style="font-size:12px;color:var(--muted)"></span>
       </div>
-
-      <!-- Donut Chart -->
-      <div class="card">
-        <div class="card-header"><div class="card-title">Today's Breakdown</div></div>
-        <div class="chart-wrap">
-          <canvas id="donutChart" height="200"></canvas>
-        </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Name</th><th>Branch</th><th>Course / Dept</th>
+            <th>In</th><th>Out</th><th>Hours</th>
+          </tr></thead>
+          <tbody id="attBody">
+            <tr><td colspan="7" class="empty">Select a date and click Filter</td></tr>
+          </tbody>
+        </table>
       </div>
-
-      <!-- Weekly Bar -->
-      <div class="card">
-        <div class="card-header"><div class="card-title">7-Day Trend</div></div>
-        <div class="weekly-wrap">
-          <canvas id="barChart" height="180"></canvas>
-        </div>
-      </div>
-
     </div>
   </div>
-</div>
+
+  <!-- ══ ROSTER TAB ══ -->
+  <div class="section" id="sec-roster">
+    <div class="toolbar">
+      <input type="text" id="rosterSearch" placeholder="Search name / UID…" style="width:200px" oninput="filterRoster()">
+      <select id="rosterType" onchange="filterRoster()">
+        <option value="">All Types</option>
+        <option>Student</option><option>Staff</option><option>Others</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">Enrolled Cards</div>
+        <span id="rosterCount" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>UID</th><th>Type</th><th>Name</th><th>Branch</th>
+            <th>ID No.</th><th>Contact</th><th>Course / Role</th><th></th>
+          </tr></thead>
+          <tbody id="rosterBody">
+            <tr><td colspan="8" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ STATS TAB ══ -->
+  <div class="section" id="sec-stats">
+    <div class="type-tabs">
+      <div class="type-tab active" onclick="setStatsType('Student',this)">Students</div>
+      <div class="type-tab" onclick="setStatsType('Staff',this)">Staff</div>
+      <div class="type-tab" onclick="setStatsType('Others',this)">Others</div>
+    </div>
+    <div class="stats" id="statsCards">
+      <div class="stat s1"><div class="n" id="stPresent">—</div><div class="l">Present</div></div>
+      <div class="stat s3"><div class="n" id="stAbsent">—</div><div class="l">Absent</div></div>
+      <div class="stat s4"><div class="n" id="stTotal">—</div><div class="l">Total</div></div>
+      <div class="stat s2"><div class="n" id="stRate">—</div><div class="l">Attendance %</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card">
+        <div class="card-head"><div class="card-title">Absentees Today</div></div>
+        <div id="absentList" style="max-height:260px;overflow-y:auto"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">By Group / Course</div></div>
+        <div id="groupList" style="padding:14px"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /page -->
 
 <div id="toast"></div>
 
 <script>
-  const BASE = window.location.href.split('?')[0];
-  let donut = null, bar = null;
-  let allRecords = [];
-  let refreshTimer = null;
+const BASE  = window.location.href.split('?')[0];
+let adminOn  = false;
+let pollTimer = null;
+let curType   = 'Student';
+let allRoster = [];
+let statsType = 'Student';
 
-  // ── Init ────────────────────────────────────────────────────
-  window.addEventListener('DOMContentLoaded', () => {
-    const today = new Date().toISOString().slice(0, 10);
-    document.getElementById('filterDate').value = today;
-    refreshAll();
-    startClock();
-    refreshTimer = setInterval(refreshAll, 30000); // 30-second auto-refresh
+// ── Init ──────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  tick();
+  setInterval(tick, 1000);
+  const today = fmtDate(new Date());
+  document.getElementById('attDate').value = toInputDate(today);
+  loadStats();
+  loadToday();
+  loadRoster();
+  setInterval(() => { loadStats(); loadToday(); }, 30000);
+});
+
+function tick() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+// ── Tabs ──────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('sec-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'today')  loadAttendance();
+  if (name === 'roster') loadRoster();
+  if (name === 'stats')  loadStatsTab();
+}
+
+// ── Stats (mini, for admin tab) ───────────────────────────────
+function loadStats() {
+  gas('stats', {type: 'Student'}).then(d => {
+    if (!d.ok) return;
+    set('sPresent', d.presentToday);
+    set('sLate',    '—');
+    set('sAbsent',  d.absentToday);
+    set('sTotal',   d.total);
   });
+}
 
-  function startClock() {
-    setInterval(() => {
-      document.getElementById('clockDisplay').textContent =
-        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    }, 1000);
-  }
-
-  function refreshAll() {
-    loadStats();
-    loadRecords();
-  }
-
-  // ── Stats ────────────────────────────────────────────────────
-  function loadStats() {
-    fetch(BASE + '?action=getStats')
-      .then(r => r.json())
-      .then(d => {
-        if (d.status !== 'success') return;
-        document.getElementById('sPresent').textContent   = d.present;
-        document.getElementById('sLate').textContent      = d.late;
-        document.getElementById('sAbsent').textContent    = d.absent;
-        document.getElementById('sCheckouts').textContent = d.checkOuts;
-        renderFeed(d.recentActivity || []);
-        renderDonut(d.present - d.late, d.late, d.absent);
-        renderBar(d.weeklyTrend || []);
-      })
-      .catch(e => console.error('Stats fetch error', e));
-  }
-
-  // ── Records ─────────────────────────────────────────────────
-  function loadRecords() {
-    const date = document.getElementById('filterDate').value;
-    const name = document.getElementById('filterName').value;
-    const dept = document.getElementById('filterDept').value;
-
-    let url = BASE + '?action=getData&limit=300';
-    if (date) url += '&date=' + date;
-    if (name) url += '&name=' + encodeURIComponent(name);
-    if (dept) url += '&dept=' + encodeURIComponent(dept);
-
-    document.getElementById('tableBody').innerHTML =
-      '<tr><td colspan="7" class="empty-state"><span class="loader"></span></td></tr>';
-
-    fetch(url)
-      .then(r => r.json())
-      .then(d => {
-        if (d.status !== 'success') throw new Error(d.message);
-        allRecords = d.data || [];
-        renderTable(allRecords);
-      })
-      .catch(e => {
-        toast('Error loading records: ' + e.message);
-        document.getElementById('tableBody').innerHTML =
-          '<tr><td colspan="7" class="empty-state"><span>⚠️</span>Failed to load</td></tr>';
-      });
-  }
-
-  // ── Table render ────────────────────────────────────────────
-  function renderTable(rows) {
-    const tbody = document.getElementById('tableBody');
-    document.getElementById('recCount').textContent = rows.length + ' records';
-
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><span>🗂️</span>No records found</td></tr>';
+// ── Today's activity (admin tab) ─────────────────────────────
+function loadToday() {
+  const today = fmtDate(new Date());
+  gas('getAttendance', {type: 'Student', date: today}).then(d => {
+    const tbody = document.getElementById('todayBody');
+    if (!d.ok || !d.rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No records yet today</td></tr>';
       return;
     }
-
-    tbody.innerHTML = rows.map(r => {
-      const time  = r.timestamp ? r.timestamp.split(' ')[1].slice(0,5) : '--';
-      const badge = actionBadge(r.action, r.late);
-      const hours = r.hoursWorked ? r.hoursWorked + ' h' : '—';
-      const late  = r.late === 'YES' ? '<span class="badge b-late">LATE</span>' : '';
+    tbody.innerHTML = d.rows.map(r => {
+      const badge = r.inTime && !r.outTime ? '<span class="badge b-in">IN</span>' :
+                    r.outTime              ? '<span class="badge b-out">OUT</span>' : '';
       return `<tr>
-        <td style="white-space:nowrap;color:var(--muted)">${time}</td>
-        <td style="font-weight:500">${esc(r.name || 'Unknown')}</td>
-        <td style="color:var(--muted);font-size:12px">${esc(r.department || '')}</td>
-        <td>${badge} ${late}</td>
-        <td><span style="font-size:12px;color:var(--muted)">${esc(r.statusNote || '')}</span></td>
-        <td style="color:var(--muted)">${hours}</td>
-        <td style="font-size:11px;color:var(--muted)">${esc(r.device || '')}</td>
+        <td>${r.inTime || r.outTime || '—'}</td>
+        <td><b>${esc(r.name)}</b></td>
+        <td>${esc(r.branch)}</td>
+        <td>${esc(r.sub)}</td>
+        <td>${badge}</td>
+        <td>${r.hours || '—'}</td>
       </tr>`;
     }).join('');
-  }
+  });
+}
 
-  function actionBadge(action, late) {
-    if (action === 'CHECK_IN')  return '<span class="badge b-in">▲ IN</span>';
-    if (action === 'CHECK_OUT') return '<span class="badge b-out">▼ OUT</span>';
-    if (action === 'ABSENT')    return '<span class="badge b-abs">✗ ABSENT</span>';
-    return `<span class="badge b-unk">${action}</span>`;
-  }
+// ── ADMIN MODE ────────────────────────────────────────────────
+function toggleAdminMode() {
+  adminOn = !adminOn;
+  gas('setMode', {mode: adminOn ? '1' : '0'}).then(d => {
+    if (!d.ok) { adminOn = !adminOn; return; }
+    updateAdminUI();
+    if (adminOn) {
+      pollTimer = setInterval(pollPending, 2000);
+      toast('Admin mode ON — hold BOOT button on device for 1 s');
+    } else {
+      clearInterval(pollTimer);
+      hideEnroll();
+      toast('Admin mode OFF');
+    }
+  });
+}
 
-  // ── Live Feed ────────────────────────────────────────────────
-  function renderFeed(items) {
-    const el = document.getElementById('liveFeed');
-    if (!items.length) {
-      el.innerHTML = '<div class="empty-state"><span>📭</span>No activity today</div>';
+function updateAdminUI() {
+  const bar  = document.getElementById('adminBar');
+  const dot  = document.getElementById('adminDot');
+  const lbl  = document.getElementById('adminLabel');
+  const hint = document.getElementById('adminHint');
+  const btn  = document.getElementById('adminToggleBtn');
+  if (adminOn) {
+    bar.classList.add('active');
+    dot.className = 'dot dot-on';
+    lbl.textContent = 'Admin Mode ACTIVE';
+    hint.textContent = 'Scan a card on the device to enrol it';
+    btn.textContent = 'Disable';
+    btn.className = 'btn btn-red';
+  } else {
+    bar.classList.remove('active');
+    dot.className = 'dot dot-off';
+    lbl.textContent = 'Admin Enrolment Mode';
+    hint.textContent = 'Enable to allow card enrolment from the device';
+    btn.textContent = 'Enable';
+    btn.className = 'btn btn-primary';
+  }
+}
+
+function pollPending() {
+  gas('getPending', {}).then(d => {
+    if (!d.ok || !d.uid) return;
+    showEnroll(d.uid, d.known);
+  });
+}
+
+function showEnroll(uid, known) {
+  document.getElementById('pendingUID').textContent = uid;
+  document.getElementById('enrollPanel').style.display = 'block';
+
+  if (known) {
+    document.getElementById('eName').value       = known.name       || '';
+    document.getElementById('eType').value       = known.type       || 'Student';
+    document.getElementById('eBranch').value     = known.branch     || '';
+    document.getElementById('eID').value         = known.idNumber   || '';
+    document.getElementById('eContact').value    = known.contact    || '';
+    document.getElementById('eCourse').value     = known.course     || '';
+    document.getElementById('eBatch').value      = known.batch      || '';
+    document.getElementById('eInstructor').value = known.instructor || '';
+    document.getElementById('eParent').value     = known.parentPhone|| '';
+    document.getElementById('eRole').value       = known.role       || '';
+    document.getElementById('eDept').value       = known.department || '';
+    document.getElementById('eNote').value       = known.note       || '';
+    typeChanged();
+    toast('Card found in roster — you can update details');
+  } else {
+    toast('New card scanned — fill in details and save');
+  }
+}
+
+function hideEnroll() {
+  document.getElementById('enrollPanel').style.display = 'none';
+  document.getElementById('eName').value = '';
+}
+
+function typeChanged() {
+  const t = document.getElementById('eType').value;
+  document.querySelectorAll('.student-field').forEach(e =>
+    e.style.display = t === 'Student' ? '' : 'none');
+  document.querySelectorAll('.staff-field').forEach(e =>
+    e.style.display = t === 'Staff' ? '' : 'none');
+  document.querySelectorAll('.other-field').forEach(e =>
+    e.style.display = t === 'Others' ? '' : 'none');
+}
+
+function submitEnroll() {
+  const uid  = document.getElementById('pendingUID').textContent.trim();
+  const name = document.getElementById('eName').value.trim();
+  if (!uid || uid === '—') { toast('No pending UID'); return; }
+  if (!name)               { toast('Name is required'); return; }
+
+  const params = {
+    uid,
+    type:        document.getElementById('eType').value,
+    name,
+    branch:      document.getElementById('eBranch').value,
+    idNumber:    document.getElementById('eID').value,
+    contact:     document.getElementById('eContact').value,
+    course:      document.getElementById('eCourse').value,
+    batch:       document.getElementById('eBatch').value,
+    instructor:  document.getElementById('eInstructor').value,
+    parentPhone: document.getElementById('eParent').value,
+    role:        document.getElementById('eRole').value,
+    department:  document.getElementById('eDept').value,
+    note:        document.getElementById('eNote').value,
+  };
+
+  gas('enroll', params).then(d => {
+    if (d.ok) {
+      toast('✓ ' + name + ' enrolled successfully!');
+      hideEnroll();
+      loadRoster();
+    } else {
+      toast('Error: ' + d.msg);
+    }
+  });
+}
+
+function cancelEnroll() {
+  hideEnroll();
+  gas('getPending', {}).then(() => {}); // don't clear pending from server
+}
+
+// ── ATTENDANCE TAB ───────────────────────────────────────────
+function setType(t, el) {
+  curType = t;
+  document.querySelectorAll('#sec-today .type-tab').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  loadAttendance();
+}
+
+function loadAttendance() {
+  const rawDate = document.getElementById('attDate').value;
+  const date    = rawDate ? inputToFmt(rawDate) : '';
+  const search  = document.getElementById('attSearch').value.toLowerCase();
+
+  gas('getAttendance', {type: curType, date}).then(d => {
+    const tbody = document.getElementById('attBody');
+    if (!d.ok) { tbody.innerHTML = '<tr><td colspan="7" class="empty">Error loading</td></tr>'; return; }
+
+    let rows = d.rows || [];
+    if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search));
+    document.getElementById('attCount').textContent = rows.length + ' records';
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No records found</td></tr>';
       return;
     }
-    el.innerHTML = items.map(a => {
-      const dot = a.action === 'CHECK_IN' ? 'fd-in' : a.action === 'CHECK_OUT' ? 'fd-out' : 'fd-abs';
-      const lbl = a.action === 'CHECK_IN' ? 'Checked in' : a.action === 'CHECK_OUT' ? 'Checked out' : 'Absent';
-      const late = a.late === 'YES' ? ' · <span style="color:#F59E0B;font-size:10px">LATE</span>' : '';
-      return `<div class="feed-item">
-        <div class="feed-dot ${dot}"></div>
-        <div>
-          <div class="feed-name">${esc(a.name)}</div>
-          <div class="feed-meta">${lbl} at ${a.time}${late}</div>
-        </div>
-      </div>`;
+    tbody.innerHTML = rows.map(r => {
+      const inBadge  = r.inTime  ? `<span class="badge b-in">${r.inTime}</span>`  : '—';
+      const outBadge = r.outTime ? `<span class="badge b-out">${r.outTime}</span>` : '—';
+      return `<tr>
+        <td>${esc(r.date)}</td>
+        <td><b>${esc(r.name)}</b></td>
+        <td>${esc(r.branch)}</td>
+        <td>${esc(r.sub)}</td>
+        <td>${inBadge}</td>
+        <td>${outBadge}</td>
+        <td>${r.hours ? r.hours + ' h' : '—'}</td>
+      </tr>`;
     }).join('');
-  }
+  });
+}
 
-  // ── Charts ───────────────────────────────────────────────────
-  function renderDonut(onTime, late, absent) {
-    const ctx = document.getElementById('donutChart').getContext('2d');
-    if (donut) donut.destroy();
-    donut = new Chart(ctx, {
-      type: 'doughnut',
-      data: {
-        labels: ['On Time', 'Late', 'Absent'],
-        datasets: [{ data: [onTime, late, absent],
-          backgroundColor: ['#10B981','#F59E0B','#EF4444'],
-          borderWidth: 0, hoverOffset: 6 }]
-      },
-      options: {
-        cutout: '65%', responsive: true,
-        plugins: {
-          legend: { position: 'bottom', labels: { usePointStyle: true, font: { size: 11 }, padding: 12 } }
-        }
-      }
-    });
-  }
+function clearAttFilter() {
+  document.getElementById('attSearch').value = '';
+  document.getElementById('attDate').value   = toInputDate(fmtDate(new Date()));
+  loadAttendance();
+}
 
-  function renderBar(trend) {
-    const ctx = document.getElementById('barChart').getContext('2d');
-    if (bar) bar.destroy();
-    if (!trend.length) return;
-    bar = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: trend.map(t => t.date),
-        datasets: [
-          { label: 'Present', data: trend.map(t => t.present),
-            backgroundColor: '#A7F3D0', borderRadius: 4 },
-          { label: 'Late',    data: trend.map(t => t.late),
-            backgroundColor: '#FDE68A', borderRadius: 4 },
-          { label: 'Absent',  data: trend.map(t => t.absent),
-            backgroundColor: '#FECACA', borderRadius: 4 },
-        ]
-      },
-      options: {
-        responsive: true, scales: {
-          x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
-          y: { stacked: true, beginAtZero: true, ticks: { font: { size: 10 }, stepSize: 1 } },
-        },
-        plugins: { legend: { labels: { font: { size: 11 }, usePointStyle: true } } }
-      }
-    });
-  }
+// ── ROSTER TAB ────────────────────────────────────────────────
+function loadRoster() {
+  gas('getRoster', {}).then(d => {
+    allRoster = d.students || [];
+    renderRoster(allRoster);
+    document.getElementById('rosterCount').textContent = allRoster.length + ' cards';
+  });
+}
 
-  // ── Filters ──────────────────────────────────────────────────
-  function clearFilters() {
-    document.getElementById('filterName').value = '';
-    document.getElementById('filterDept').value = '';
-    document.getElementById('filterDate').value = new Date().toISOString().slice(0,10);
-    loadRecords();
-  }
+function filterRoster() {
+  const q  = document.getElementById('rosterSearch').value.toLowerCase();
+  const tp = document.getElementById('rosterType').value;
+  const filtered = allRoster.filter(r => {
+    const match = (r.name + ' ' + r.uid + ' ' + r.idNumber).toLowerCase().includes(q);
+    const typeOk = !tp || r.type === tp;
+    return match && typeOk;
+  });
+  renderRoster(filtered);
+}
 
-  // ── Export ───────────────────────────────────────────────────
-  function exportData() {
-    const date = document.getElementById('filterDate').value;
-    const url  = BASE + '?action=export' + (date ? '&date=' + date : '');
-    window.open(url, '_blank');
+function renderRoster(list) {
+  const tbody = document.getElementById('rosterBody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No records</td></tr>';
+    return;
   }
+  tbody.innerHTML = list.map(r => `<tr>
+    <td style="font-family:monospace;font-size:12px">${esc(r.uid)}</td>
+    <td><span class="badge b-in">${esc(r.type)}</span></td>
+    <td><b>${esc(r.name)}</b></td>
+    <td>${esc(r.branch)}</td>
+    <td>${esc(r.idNumber)}</td>
+    <td>${esc(r.contact)}</td>
+    <td>${esc(r.course || r.role || r.note)}</td>
+    <td>
+      <button class="btn btn-red btn-sm" onclick="deleteCard('${esc(r.uid)}','${esc(r.name)}')">Delete</button>
+    </td>
+  </tr>`).join('');
+}
 
-  // ── Helpers ──────────────────────────────────────────────────
-  function esc(s) {
-    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
+function deleteCard(uid, name) {
+  if (!confirm('Delete ' + name + ' (' + uid + ')?\nThis cannot be undone.')) return;
+  gas('deleteStudent', {uid}).then(d => {
+    if (d.ok) { toast('Deleted ' + name); loadRoster(); }
+    else toast('Error: ' + d.msg);
+  });
+}
 
-  function toast(msg) {
-    const el = document.getElementById('toast');
-    el.textContent = msg;
-    el.style.display = 'block';
-    setTimeout(() => el.style.display = 'none', 3500);
-  }
+// ── STATS TAB ────────────────────────────────────────────────
+function setStatsType(t, el) {
+  statsType = t;
+  document.querySelectorAll('#sec-stats .type-tab').forEach(e => e.classList.remove('active'));
+  el.classList.add('active');
+  loadStatsTab();
+}
+
+function loadStatsTab() {
+  gas('stats', {type: statsType}).then(d => {
+    if (!d.ok) return;
+    const rate = d.total ? Math.round(d.presentToday / d.total * 100) : 0;
+    set('stPresent', d.presentToday);
+    set('stAbsent',  d.absentToday);
+    set('stTotal',   d.total);
+    set('stRate',    rate + '%');
+
+    // Absentees
+    const al = document.getElementById('absentList');
+    if (!d.absentees.length) {
+      al.innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">All present! 🎉</div>';
+    } else {
+      al.innerHTML = d.absentees.map(a => `
+        <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+          <span style="font-size:13px;font-weight:500">${esc(a.name)}</span>
+          <span style="font-size:12px;color:var(--muted)">${esc(a.sub)}</span>
+        </div>`).join('');
+    }
+
+    // By group
+    const gl = document.getElementById('groupList');
+    const groups = Object.entries(d.byGroup || {});
+    if (!groups.length) {
+      gl.innerHTML = '<div style="color:var(--muted);font-size:13px">No group data yet</div>';
+    } else {
+      const max = Math.max(...groups.map(g => g[1]));
+      gl.innerHTML = groups.sort((a,b) => b[1]-a[1]).map(([g, n]) => `
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
+            <span>${esc(g)}</span><b>${n}</b>
+          </div>
+          <div style="background:var(--border);border-radius:4px;height:6px">
+            <div style="background:var(--brand);width:${Math.round(n/max*100)}%;height:6px;border-radius:4px"></div>
+          </div>
+        </div>`).join('');
+    }
+  });
+}
+
+// ── GAS FETCH HELPER ─────────────────────────────────────────
+function gas(action, params) {
+  const url = new URL(BASE);
+  url.searchParams.set('action', action);
+  for (const k in params) if (params[k] !== undefined) url.searchParams.set(k, params[k]);
+  return fetch(url.toString())
+    .then(r => r.json())
+    .catch(e => ({ ok: false, msg: String(e) }));
+}
+
+// ── UTILS ────────────────────────────────────────────────────
+function fmtDate(d) {
+  const z = n => String(n).padStart(2,'0');
+  return z(d.getDate())+'/'+z(d.getMonth()+1)+'/'+d.getFullYear();
+}
+function toInputDate(dd_mm_yyyy) {
+  const [d,m,y] = dd_mm_yyyy.split('/');
+  return y+'-'+m+'-'+d;
+}
+function inputToFmt(yyyy_mm_dd) {
+  const [y,m,d] = yyyy_mm_dd.split('-');
+  return d+'/'+m+'/'+y;
+}
+function set(id, v) { document.getElementById(id).textContent = v; }
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3500);
+}
+
+typeChanged(); // init form visibility
 </script>
 </body>
 </html>

@@ -21,8 +21,22 @@ var ATT_STUDENT  = "Student Attendance";
 var ATT_STAFF    = "Staff Attendance";
 var ATT_OTHER    = "Other Attendance";
 
+// ── Spreadsheet binding ───────────────────────────────────────
+// Leave blank when the script is created via Extensions → Apps Script
+// inside a Google Sheet (recommended — bound mode).
+// If you created the script at script.google.com (standalone mode),
+// paste your Sheet ID here: Sheets URL → /d/SHEET_ID/edit
+var SPREADSHEET_ID = "";
+
 function ss_() {
-  return SpreadsheetApp.getActiveSpreadsheet();
+  if (SPREADSHEET_ID) return SpreadsheetApp.openById(SPREADSHEET_ID);
+  var s = SpreadsheetApp.getActiveSpreadsheet();
+  if (!s) throw new Error(
+    "Script is not bound to a spreadsheet.\n" +
+    "FIX: Open your Google Sheet → Extensions → Apps Script → paste Code.gs there.\n" +
+    "OR: Set SPREADSHEET_ID at the top of Code.gs to your sheet's ID."
+  );
+  return s;
 }
 
 // ════════════════════════════════════════════════════════════════

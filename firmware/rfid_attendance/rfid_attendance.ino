@@ -26,6 +26,7 @@
  */
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <SPI.h>
 #include <MFRC522.h>
@@ -693,7 +694,7 @@ void netTask(void* param) {
   unsigned long lastRoster    = millis();  // boot fetch already done
   unsigned long lastSettings  = millis();
   unsigned long lastDrain     = 0;
-  ScanEvent evt;
+  ScanEvent evt = {};
 
   for (;;) {
     // ── Drain scan-event queue (highest priority in net task) ─────
@@ -759,10 +760,10 @@ void netTask(void* param) {
       lastSettings = millis(); fetchSettings();
     }
 
-    // Yield: sleep up to 50 ms, wake immediately if a scan event arrives
+    // Yield: sleep up to 50 ms, wake immediately if a scan event arrives.
+    // Clear evt first so stale data from a processed event can't be re-queued.
+    memset(&evt, 0, sizeof(evt));
     xQueueReceive(g_netQueue, &evt, pdMS_TO_TICKS(50));
-    // If an item was pulled here, put it back so the top-of-loop handles it
-    // (xQueueSendToFront, non-blocking)
     if (evt.uid[0]) xQueueSendToFront(g_netQueue, &evt, 0);
     memset(&evt, 0, sizeof(evt));
   }
@@ -777,11 +778,20 @@ void setup() {
   Serial.begin(115200);
   Serial.println(F("\n=== Smart RFID Attendance v4.2 ==="));
 
+  // MUST be first: every lcdMsg/updateClock calls lcdRowSet which takes xLcdRowMutex.
+  // Creating mutexes after any LCD call causes xSemaphoreTake(NULL) → FreeRTOS assert → reboot loop.
+  xRosterMutex = xSemaphoreCreateMutex();
+  xNvsMutex    = xSemaphoreCreateMutex();
+  xLcdRowMutex = xSemaphoreCreateMutex();
+  xHttpMutex   = xSemaphoreCreateMutex();
+  g_netQueue   = xQueueCreate(NET_QUEUE_LEN, sizeof(ScanEvent));
+
   pinMode(BUZZER,    OUTPUT); digitalWrite(BUZZER, LOW);
   pinMode(ADMIN_BTN, INPUT_PULLUP);
 
   Wire.begin(SDA_PIN, SCL_PIN);
   lcd.init(); lcd.backlight();
+  lcd.noCursor(); lcd.noBlink();
   lcdMsg("Smart Attendance", ORG_NAME);
   delay(2000);
 
@@ -817,21 +827,14 @@ void setup() {
   delay(50);
   Serial.println(F("[RFID] Ready"));
 
-  // Create RTOS primitives before any task or WiFi use
-  xRosterMutex = xSemaphoreCreateMutex();
-  xNvsMutex    = xSemaphoreCreateMutex();
-  xLcdRowMutex = xSemaphoreCreateMutex();
-  xHttpMutex   = xSemaphoreCreateMutex();
-  g_netQueue   = xQueueCreate(NET_QUEUE_LEN, sizeof(ScanEvent));
-
-  // Initial data pull (synchronous — tasks not yet running)
+  // Initial data pull (synchronous — net task not yet running)
   lcdMsg("Connecting WiFi.", WIFI_SSID);
   connectWiFi();
   fetchSettings();
   fetchRoster(false);  // shows "Loading roster.." on LCD
 
   // Net task on Core 0, priority 2  (loop() is priority 1 on Core 1)
-  xTaskCreatePinnedToCore(netTask, "netTask", 12288, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(netTask, "netTask", 20480, NULL, 2, NULL, 0);
 
   updateClock();
   Serial.println(F("[SYS] Ready — Core 1: RFID/LCD | Core 0: HTTP\n"));
@@ -867,14 +870,16 @@ void loop() {
   // ── Clock update (1 s) ────────────────────────────────────────
   if (now - lastClockMs > 1000) { lastClockMs = now; updateClock(); }
 
-  // ── RFID poll ─────────────────────────────────────────────────
-  if (!rfid.PICC_IsNewCardPresent()) return;
-  if (!rfid.PICC_ReadCardSerial())   return;
+  // ── RFID poll (~100 Hz) ───────────────────────────────────────
+  // 10 ms yield between polls: limits RF field hammering (which causes
+  // erratic reads at full CPU speed) and feeds the Core 1 idle task.
+  if (!rfid.PICC_IsNewCardPresent()) { vTaskDelay(pdMS_TO_TICKS(10)); return; }
+  if (!rfid.PICC_ReadCardSerial())   { vTaskDelay(pdMS_TO_TICKS(10)); return; }
 
   String uid = readUID();
 
   if (uid == lastUID && (now - lastScanMs) < SCAN_DEBOUNCE_MS) {
-    rfid.PICC_HaltA(); return;
+    rfid.PICC_HaltA(); vTaskDelay(pdMS_TO_TICKS(10)); return;
   }
   lastUID    = uid;
   lastScanMs = now;

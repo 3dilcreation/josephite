@@ -1,6 +1,6 @@
 /*
  * ================================================================
- *   Smart RFID Attendance System  v4.1  —  TechSei Lab
+ *   Smart RFID Attendance System  v4.2  —  TechSei Lab
  * ================================================================
  *   Hardware:
  *     ESP32  |  MFRC522 RFID  |  DS3231 RTC  |  I2C LCD 16×2
@@ -12,17 +12,16 @@
  *     RTClib            by Adafruit
  *     ArduinoJson       by Benoit Blanchon  v6.x
  *
- *   Features (v4.1):
- *     • Check-in / check-out toggle per UID (Preferences NVS, survives reboot)
- *     • DS3231 RTC — accurate time without internet
- *     • SPIFFS offline queue — auto-uploads when WiFi returns
- *     • Buzzer ONLY on check-in / check-out (no boot beeps, no error beeps)
- *     • Admin mode (hold BOOT 1 s) — scan → enroll via web dashboard
- *     • Student / Staff / Others support
- *     • Time-based status: ON_TIME / LATE / EARLY_ARR / EARLY_DEP / OVERTIME
- *     • All time thresholds configurable in config.h — no recompile needed
- *     • LCD shows hours worked on check-out (e.g. "OUT 17:30  8.0h ")
- *     • Idle screen shows contextual hint (LATE, Closed, etc.)
+ *   v4.2 — FreeRTOS dual-core split:
+ *     Core 1 (loop): RFID read → cache lookup → LCD → beep  (<50 ms)
+ *     Core 0 (netTask): ALL HTTP — log, heartbeat, drain, settings, roster
+ *     No HTTP ever runs on Core 1 → scan latency is hardware-limited only
+ *
+ *   Other features:
+ *     • IN/OUT day-guard: cannot check-out without today's check-in
+ *     • Daily GAS auto-exit trigger fills outstanding OUT at close time
+ *     • Roster version signal: enrol/delete visible on device in ≤ 15 s
+ *     • Background queue drain (FIFO, one record per idle cycle)
  * ================================================================
  */
 
@@ -44,53 +43,65 @@ LiquidCrystal_I2C lcd(LCD_ADDR, 16, 2);
 RTC_DS3231        rtc;
 Preferences       prefs;
 
+// ── RTOS synchronisation ─────────────────────────────────────────
+SemaphoreHandle_t xRosterMutex;  // guards g_roster[] between cores
+SemaphoreHandle_t xNvsMutex;     // guards Preferences (not thread-safe)
+SemaphoreHandle_t xLcdRowMutex;  // guards g_lcdRow snapshot for heartbeat
+SemaphoreHandle_t xHttpMutex;    // one HTTP call at a time (admin + net task)
+
+// ── Scan → net task queue ────────────────────────────────────────
+#define NET_QUEUE_LEN 30
+struct ScanEvent {
+  char uid[16];
+  char date[12];   // DD/MM/YYYY
+  char inTime[6];  // "HH:MM" or ""
+  char outTime[6]; // "HH:MM" or ""
+  char status[12]; // ON_TIME / LATE / EARLY_ARR / EARLY_DEP / OVERTIME
+};
+QueueHandle_t g_netQueue;
+
 // ── Global state ─────────────────────────────────────────────────
-bool          wifiOk       = false;
-bool          adminMode    = false;
+volatile bool adminMode    = false;
+volatile bool wifiOk       = false;
 unsigned long adminModeMs  = 0;
 String        lastUID      = "";
-unsigned long lastScanMs   = 0;
-unsigned long lastWifiMs   = 0;
+volatile unsigned long lastScanMs  = 0;   // written Core 1, read Core 0
 unsigned long lastClockMs  = 0;
 bool          btnWasLow    = false;
 unsigned long btnLowMs     = 0;
-int           offlineCount = 0;
+volatile int  offlineCount = 0;           // written Core 0, read by heartbeat
 
 const char* DAYS[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
 
-// LCD content tracking (sent to GAS on every heartbeat)
-char g_lcdRow0[17]     = "                ";
-char g_lcdRow1[17]     = "                ";
+// ── LCD row snapshot (read by net task for heartbeat) ────────────
+char g_lcdRow0[17] = "                ";
+char g_lcdRow1[17] = "                ";
 
-// Runtime time thresholds (defaults match config.h; overridden by fetchSettings)
-int g_openHour     = OPEN_HOUR;
-int g_openMin      = OPEN_MIN;
-int g_lateHour     = LATE_HOUR;
-int g_lateMin      = LATE_MIN;
-int g_closeHour    = CLOSE_HOUR;
-int g_closeMin     = CLOSE_MIN;
-int g_earlyOutHour = EARLY_OUT_HOUR;
-int g_earlyOutMin  = EARLY_OUT_MIN;
-int g_overtimeHour = OVERTIME_HOUR;
-int g_overtimeMin  = OVERTIME_MIN;
-String        g_settingsVersion = "";
-String        g_rosterVersion   = "";
-unsigned long lastHeartbeatMs   = 0;
-unsigned long lastRosterMs      = 0;
-unsigned long lastDrainMs       = 0;
+// ── Runtime time thresholds (volatile so Core 0 write, Core 1 read) ──
+volatile int g_openHour     = OPEN_HOUR;
+volatile int g_openMin      = OPEN_MIN;
+volatile int g_lateHour     = LATE_HOUR;
+volatile int g_lateMin      = LATE_MIN;
+volatile int g_closeHour    = CLOSE_HOUR;
+volatile int g_closeMin     = CLOSE_MIN;
+volatile int g_earlyOutHour = EARLY_OUT_HOUR;
+volatile int g_earlyOutMin  = EARLY_OUT_MIN;
+volatile int g_overtimeHour = OVERTIME_HOUR;
+volatile int g_overtimeMin  = OVERTIME_MIN;
+String g_settingsVersion = "";
+String g_rosterVersion   = "";
 
-// Local roster cache — downloaded from GAS at boot, held in RAM for instant lookup
+// ── Local roster cache ───────────────────────────────────────────
 struct RosterEntry { char uid[16]; char name[33]; char type[10]; };
 static RosterEntry g_roster[MAX_ROSTER_ENTRIES];
-int g_rosterCount = 0;
+volatile int g_rosterCount = 0;
 
 
 // ════════════════════════════════════════════════════════════════
-//  1. BUZZER — ONLY check-in and check-out confirmations
+//  1. BUZZER
 // ════════════════════════════════════════════════════════════════
 
 void beepIn() {
-  // Two short beeps = welcome / check-in
   digitalWrite(BUZZER, HIGH); delay(120);
   digitalWrite(BUZZER, LOW);  delay(80);
   digitalWrite(BUZZER, HIGH); delay(120);
@@ -98,7 +109,6 @@ void beepIn() {
 }
 
 void beepOut() {
-  // Three short beeps = goodbye / check-out
   digitalWrite(BUZZER, HIGH); delay(120);
   digitalWrite(BUZZER, LOW);  delay(70);
   digitalWrite(BUZZER, HIGH); delay(120);
@@ -109,12 +119,18 @@ void beepOut() {
 
 
 // ════════════════════════════════════════════════════════════════
-//  2. LCD HELPERS
+//  2. LCD HELPERS  (Core 1 only for hardware; lcdRow also read Core 0)
 // ════════════════════════════════════════════════════════════════
 
+void lcdRowSet(const char* r0, const char* r1) {
+  xSemaphoreTake(xLcdRowMutex, portMAX_DELAY);
+  strncpy(g_lcdRow0, r0, 16); g_lcdRow0[16] = '\0';
+  strncpy(g_lcdRow1, r1, 16); g_lcdRow1[16] = '\0';
+  xSemaphoreGive(xLcdRowMutex);
+}
+
 void lcdMsg(const char* top, const char* bot) {
-  strncpy(g_lcdRow0, top, 16); g_lcdRow0[16] = '\0';
-  strncpy(g_lcdRow1, bot, 16); g_lcdRow1[16] = '\0';
+  lcdRowSet(top, bot);
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print(top);
   lcd.setCursor(0, 1); lcd.print(bot);
@@ -133,26 +149,19 @@ void updateClock() {
   } else {
     const char* wifi = wifiOk ? "[WiFi]" : "[OFLN]";
     int cur = now.hour() * 60 + now.minute();
-    if (cur < g_openHour * 60 + g_openMin) {
-      snprintf(row1, sizeof(row1), "%s TooEarly ", wifi);
-    } else if (cur >= g_closeHour * 60 + g_closeMin) {
-      snprintf(row1, sizeof(row1), "%s Closed   ", wifi);
-    } else if (cur >= g_lateHour * 60 + g_lateMin) {
-      snprintf(row1, sizeof(row1), "%s LATE Scan", wifi);
-    } else {
-      snprintf(row1, sizeof(row1), "%s Scan Card", wifi);
-    }
+    if      (cur <  g_openHour  * 60 + g_openMin)  snprintf(row1, sizeof(row1), "%s TooEarly ", wifi);
+    else if (cur >= g_closeHour * 60 + g_closeMin)  snprintf(row1, sizeof(row1), "%s Closed   ", wifi);
+    else if (cur >= g_lateHour  * 60 + g_lateMin)   snprintf(row1, sizeof(row1), "%s LATE Scan", wifi);
+    else                                              snprintf(row1, sizeof(row1), "%s Scan Card", wifi);
   }
 
-  strncpy(g_lcdRow0, row0, 16); g_lcdRow0[16] = '\0';
-  strncpy(g_lcdRow1, row1, 16); g_lcdRow1[16] = '\0';
+  lcdRowSet(row0, row1);
   lcd.setCursor(0, 0); lcd.print(row0);
   lcd.setCursor(0, 1); lcd.print(row1);
 }
 
 void showResult(const char* line0, const char* line1, int holdMs) {
-  strncpy(g_lcdRow0, line0, 16); g_lcdRow0[16] = '\0';
-  strncpy(g_lcdRow1, line1, 16); g_lcdRow1[16] = '\0';
+  lcdRowSet(line0, line1);
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print(line0);
   lcd.setCursor(0, 1); lcd.print(line1);
@@ -190,93 +199,66 @@ void connectWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("[WiFi] Connecting");
+  // Use vTaskDelay so other RTOS tasks still run during connect
   for (int i = 0; i < 24 && WiFi.status() != WL_CONNECTED; i++) {
-    delay(500); Serial.print(".");
+    vTaskDelay(pdMS_TO_TICKS(500)); Serial.print(".");
   }
   wifiOk = (WiFi.status() == WL_CONNECTED);
-  Serial.println(wifiOk ? "\n[WiFi] Connected" : "\n[WiFi] Offline mode");
+  Serial.println(wifiOk ? "\n[WiFi] Connected" : "\n[WiFi] Offline");
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  5. RTC — formatted strings
+//  5. RTC
 // ════════════════════════════════════════════════════════════════
 
 String getTimeStr() {
   DateTime now = rtc.now();
-  char buf[6];
-  sprintf(buf, "%02d:%02d", now.hour(), now.minute());
+  char buf[6]; sprintf(buf, "%02d:%02d", now.hour(), now.minute());
   return String(buf);
 }
 
 String getDateStr() {
   DateTime now = rtc.now();
-  char buf[11];
-  sprintf(buf, "%02d/%02d/%04d", now.day(), now.month(), now.year());
+  char buf[11]; sprintf(buf, "%02d/%02d/%04d", now.day(), now.month(), now.year());
   return String(buf);
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  6. PREFERENCES — per-card IN/OUT status and check-in time
+//  6. PREFERENCES  (all callers must hold xNvsMutex)
 // ════════════════════════════════════════════════════════════════
 
-// Strip colons/spaces, cap at 15 chars (Preferences key limit)
 String makeKey(const String& uid) {
-  String k = uid;
-  k.replace(":", "");
-  k.replace(" ", "");
+  String k = uid; k.replace(":", ""); k.replace(" ", "");
   if (k.length() > 15) k = k.substring(0, 15);
   return k;
 }
-
-// "t" prefix + first 14 chars of uid key = max 15 chars
 String makeTimeKey(const String& uid) {
-  String k = "t" + makeKey(uid);
-  if (k.length() > 15) k = k.substring(0, 15);
-  return k;
+  String k = "t" + makeKey(uid); if (k.length() > 15) k = k.substring(0, 15); return k;
 }
-
-// Returns true = next scan is IN (default for new cards)
-bool getStatus(const String& uid) {
-  return prefs.getBool(makeKey(uid).c_str(), true);
-}
-
-void setStatus(const String& uid, bool nextIsIn) {
-  prefs.putBool(makeKey(uid).c_str(), nextIsIn);
-}
-
-void saveCheckInTime(const String& uid, const String& t) {
-  prefs.putString(makeTimeKey(uid).c_str(), t.c_str());
-}
-
-String getCheckInTime(const String& uid) {
-  return prefs.getString(makeTimeKey(uid).c_str(), "");
-}
-
-// "d" prefix + uid key — stores date of last successful check-in (guard against stale OUT)
 String makeInDateKey(const String& uid) {
-  String k = "d" + makeKey(uid);
-  if (k.length() > 15) k = k.substring(0, 15);
-  return k;
+  String k = "d" + makeKey(uid); if (k.length() > 15) k = k.substring(0, 15); return k;
 }
-void saveCheckInDate(const String& uid, const String& date) {
-  prefs.putString(makeInDateKey(uid).c_str(), date.c_str());
-}
-String getCheckInDate(const String& uid) {
-  return prefs.getString(makeInDateKey(uid).c_str(), "");
-}
+
+// Prefixed with _ — call only while holding xNvsMutex
+bool     _getStatus(const String& uid)              { return prefs.getBool  (makeKey(uid).c_str(), true); }
+void     _setStatus(const String& uid, bool v)      { prefs.putBool  (makeKey(uid).c_str(), v); }
+void     _saveCheckInTime(const String& uid, const String& t) { prefs.putString(makeTimeKey(uid).c_str(), t.c_str()); }
+String   _getCheckInTime (const String& uid)        { return prefs.getString(makeTimeKey(uid).c_str(), ""); }
+void     _saveCheckInDate(const String& uid, const String& d) { prefs.putString(makeInDateKey(uid).c_str(), d.c_str()); }
+String   _getCheckInDate (const String& uid)        { return prefs.getString(makeInDateKey(uid).c_str(), ""); }
 
 
 // ════════════════════════════════════════════════════════════════
-//  7. STATUS DETERMINATION (uses config.h thresholds)
+//  7. STATUS DETERMINATION  (reads volatile g_* thresholds — safe)
 // ════════════════════════════════════════════════════════════════
 
 String determineStatus(bool isIn, int h, int m) {
   int cur = h * 60 + m;
   if (isIn) {
-    if (cur <  g_openHour * 60 + g_openMin)  return "EARLY_ARR";
-    if (cur >= g_lateHour * 60 + g_lateMin)  return "LATE";
+    if (cur <  g_openHour  * 60 + g_openMin)  return "EARLY_ARR";
+    if (cur >= g_lateHour  * 60 + g_lateMin)  return "LATE";
     return "ON_TIME";
   } else {
     if (cur >= g_overtimeHour * 60 + g_overtimeMin)  return "OVERTIME";
@@ -285,7 +267,6 @@ String determineStatus(bool isIn, int h, int m) {
   }
 }
 
-// 5-char status label for LCD row
 const char* statusLabel(const String& st) {
   if (st == "LATE")      return "LATE ";
   if (st == "EARLY_ARR") return "E.ARR";
@@ -294,22 +275,20 @@ const char* statusLabel(const String& st) {
   return "OK   ";
 }
 
-// Hours worked as ≤5-char string (e.g. "8.0h ", "10.0h")
 String calcHoursLcd(const String& inT, const String& outT) {
   if (inT.length() < 5 || outT.length() < 5) return "?h   ";
-  int diff = (outT.substring(0, 2).toInt() * 60 + outT.substring(3, 5).toInt())
-           - (inT.substring(0, 2).toInt()  * 60 + inT.substring(3, 5).toInt());
+  int diff = (outT.substring(0,2).toInt()*60 + outT.substring(3,5).toInt())
+           - (inT.substring(0,2).toInt() *60 + inT.substring(3,5).toInt());
   if (diff <= 0) return "0h   ";
-  char buf[8];
-  snprintf(buf, sizeof(buf), "%.1fh", diff / 60.0f);
-  String s = String(buf);
-  while ((int)s.length() < 5) s += " ";
+  char buf[8]; snprintf(buf, sizeof(buf), "%.1fh", diff / 60.0f);
+  String s = String(buf); while ((int)s.length() < 5) s += " ";
   return s.substring(0, 5);
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  7b. ROSTER CACHE LOOKUP (instant — no HTTP)
+//  7b. ROSTER CACHE  (callers must hold xRosterMutex for write;
+//      lookupRoster is called under xRosterMutex from Core 1)
 // ════════════════════════════════════════════════════════════════
 
 bool lookupRoster(const String& uid, char* outName, char* outType) {
@@ -325,32 +304,32 @@ bool lookupRoster(const String& uid, char* outName, char* outType) {
 
 
 // ════════════════════════════════════════════════════════════════
-//  8. SPIFFS OFFLINE QUEUE
+//  8. SPIFFS OFFLINE QUEUE  (only touched by net task — no mutex needed)
 //     Format per line:  uid|date|intime|outtime|status
 // ════════════════════════════════════════════════════════════════
 
 void saveOffline(const String& uid, const String& date,
                  const String& inT,  const String& outT,
-                 const String& status = "ON_TIME") {
+                 const String& status) {
   File f = SPIFFS.open("/queue.txt", FILE_APPEND);
   if (!f) { Serial.println("[SPIFFS] Open failed"); return; }
   f.println(uid + "|" + date + "|" +
             (inT.isEmpty()  ? "-" : inT)  + "|" +
-            (outT.isEmpty() ? "-" : outT) + "|" +
-            status);
+            (outT.isEmpty() ? "-" : outT) + "|" + status);
   f.close();
   offlineCount++;
-  Serial.printf("[SPIFFS] Saved offline #%d\n", offlineCount);
+  Serial.printf("[Queue] Offline #%d\n", (int)offlineCount);
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  9. HTTP (HTTPS GET to Google Apps Script)
+//  9. HTTP  (protected by xHttpMutex — allows admin scan on Core 1
+//            to coexist safely with net task HTTP on Core 0)
 // ════════════════════════════════════════════════════════════════
 
 String httpGet(const String& url) {
-  WiFiClientSecure client;
-  client.setInsecure();
+  xSemaphoreTake(xHttpMutex, portMAX_DELAY);
+  WiFiClientSecure client; client.setInsecure();
   HTTPClient http;
   http.begin(client, url);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -358,71 +337,76 @@ String httpGet(const String& url) {
   int code = http.GET();
   String body = (code > 0) ? http.getString() : "";
   http.end();
+  xSemaphoreGive(xHttpMutex);
   Serial.printf("[HTTP] %d\n", code);
   return body;
 }
 
-// Send an attendance log entry to GAS
-String sendLog(const String& uid,    const String& date,
-               const String& inT,    const String& outT,
+String sendLog(const String& uid,  const String& date,
+               const String& inT,  const String& outT,
                const String& status) {
-  String url = String(GAS_URL) +
-    "?action=log&uid="     + urlEncode(uid)    +
-    "&date="               + urlEncode(date)   +
-    "&intime="             + urlEncode(inT)    +
-    "&outtime="            + urlEncode(outT)   +
-    "&status="             + urlEncode(status);
-  return httpGet(url);
+  return httpGet(String(GAS_URL) +
+    "?action=log&uid="  + urlEncode(uid)    +
+    "&date="            + urlEncode(date)   +
+    "&intime="          + urlEncode(inT)    +
+    "&outtime="         + urlEncode(outT)   +
+    "&status="          + urlEncode(status));
 }
 
-// Push UID to server's pending queue (admin enrollment)
 String pushAdminScan(const String& uid) {
-  String url = String(GAS_URL) + "?action=pushScan&uid=" + urlEncode(uid);
-  return httpGet(url);
+  return httpGet(String(GAS_URL) + "?action=pushScan&uid=" + urlEncode(uid));
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  10. SETTINGS FETCH & HEARTBEAT
+//  10. SETTINGS FETCH  (net task only)
 // ════════════════════════════════════════════════════════════════
 
 void fetchSettings() {
   if (!wifiOk) return;
   String body = httpGet(String(GAS_URL) + "?action=getSettings");
   if (body.isEmpty()) return;
-
   StaticJsonDocument<512> doc;
   if (deserializeJson(doc, body) != DeserializationError::Ok) return;
   if (!(doc["ok"] | false)) return;
-
-  g_openHour     = doc["openHour"]     | g_openHour;
-  g_openMin      = doc["openMin"]      | g_openMin;
-  g_lateHour     = doc["lateHour"]     | g_lateHour;
-  g_lateMin      = doc["lateMin"]      | g_lateMin;
-  g_closeHour    = doc["closeHour"]    | g_closeHour;
-  g_closeMin     = doc["closeMin"]     | g_closeMin;
-  g_earlyOutHour = doc["earlyOutHour"] | g_earlyOutHour;
-  g_earlyOutMin  = doc["earlyOutMin"]  | g_earlyOutMin;
-  g_overtimeHour = doc["overtimeHour"] | g_overtimeHour;
-  g_overtimeMin  = doc["overtimeMin"]  | g_overtimeMin;
+  // 32-bit aligned writes — safe to read from Core 1 without mutex
+  g_openHour     = doc["openHour"]     | (int)g_openHour;
+  g_openMin      = doc["openMin"]      | (int)g_openMin;
+  g_lateHour     = doc["lateHour"]     | (int)g_lateHour;
+  g_lateMin      = doc["lateMin"]      | (int)g_lateMin;
+  g_closeHour    = doc["closeHour"]    | (int)g_closeHour;
+  g_closeMin     = doc["closeMin"]     | (int)g_closeMin;
+  g_earlyOutHour = doc["earlyOutHour"] | (int)g_earlyOutHour;
+  g_earlyOutMin  = doc["earlyOutMin"]  | (int)g_earlyOutMin;
+  g_overtimeHour = doc["overtimeHour"] | (int)g_overtimeHour;
+  g_overtimeMin  = doc["overtimeMin"]  | (int)g_overtimeMin;
   g_settingsVersion = String(doc["version"] | "0");
-
   Serial.printf("[Settings] v%s open=%02d:%02d late=%02d:%02d close=%02d:%02d\n",
-    g_settingsVersion.c_str(),
-    g_openHour, g_openMin, g_lateHour, g_lateMin,
-    g_closeHour, g_closeMin);
+    g_settingsVersion.c_str(), (int)g_openHour, (int)g_openMin,
+    (int)g_lateHour, (int)g_lateMin, (int)g_closeHour, (int)g_closeMin);
 }
+
+
+// ════════════════════════════════════════════════════════════════
+//  10b. HEARTBEAT  (net task only)
+// ════════════════════════════════════════════════════════════════
 
 void sendHeartbeat() {
   if (!wifiOk) return;
-  String url = String(GAS_URL) +
+  // Snapshot LCD rows under mutex (Core 1 may be writing simultaneously)
+  char row0[17], row1[17];
+  xSemaphoreTake(xLcdRowMutex, portMAX_DELAY);
+  strncpy(row0, g_lcdRow0, 16); row0[16] = '\0';
+  strncpy(row1, g_lcdRow1, 16); row1[16] = '\0';
+  xSemaphoreGive(xLcdRowMutex);
+
+  String body = httpGet(String(GAS_URL) +
     "?action=heartbeat" +
-    "&row0=" + urlEncode(String(g_lcdRow0)) +
-    "&row1=" + urlEncode(String(g_lcdRow1)) +
-    "&wifi=" + (wifiOk ? "1" : "0") +
+    "&row0="  + urlEncode(String(row0)) +
+    "&row1="  + urlEncode(String(row1)) +
+    "&wifi="  + (wifiOk ? "1" : "0") +
     "&queue=" + String(offlineCount) +
-    "&mode=" + (adminMode ? "admin" : "normal");
-  String body = httpGet(url);
+    "&mode="  + (adminMode ? "admin" : "normal"));
   if (body.isEmpty()) return;
 
   StaticJsonDocument<256> doc;
@@ -430,33 +414,36 @@ void sendHeartbeat() {
 
   String remoteVer = String(doc["settingsVersion"] | "0");
   if (remoteVer != "0" && remoteVer != g_settingsVersion) {
-    Serial.printf("[Heartbeat] Settings changed → re-fetching\n");
+    Serial.println("[HB] Settings changed → re-fetch");
     fetchSettings();
-    updateClock();
   }
-
   String remoteRosterVer = String(doc["rosterVersion"] | "0");
   if (remoteRosterVer != "0" && remoteRosterVer != g_rosterVersion) {
-    Serial.printf("[Heartbeat] Roster changed → re-fetching\n");
-    fetchRoster();
+    Serial.println("[HB] Roster changed → re-fetch");
+    fetchRoster(true);
   }
 }
 
 
-void fetchRoster() {
+// ════════════════════════════════════════════════════════════════
+//  10c. ROSTER FETCH  (net task + setup; silent=true for background)
+// ════════════════════════════════════════════════════════════════
+
+void fetchRoster(bool silent) {
   if (!wifiOk) return;
+  if (!silent) lcdMsg("Loading roster..", "Please wait...  ");
   Serial.println("[Roster] Fetching...");
-  lcdMsg("Loading roster..", "Please wait...  ");
+
   String body = httpGet(String(GAS_URL) + "?action=getRoster");
-  if (body.isEmpty()) { Serial.println("[Roster] Empty response"); updateClock(); return; }
+  if (body.isEmpty()) { if (!silent) updateClock(); return; }
 
   DynamicJsonDocument doc(16384);
-  if (deserializeJson(doc, body) != DeserializationError::Ok) {
-    Serial.println("[Roster] JSON parse error"); updateClock(); return;
+  if (deserializeJson(doc, body) != DeserializationError::Ok || !(doc["ok"] | false)) {
+    if (!silent) updateClock(); return;
   }
-  if (!(doc["ok"] | false)) { Serial.println("[Roster] ok=false"); updateClock(); return; }
 
   JsonArray arr = doc["students"].as<JsonArray>();
+  xSemaphoreTake(xRosterMutex, portMAX_DELAY);
   int n = 0;
   for (JsonObject s : arr) {
     if (n >= MAX_ROSTER_ENTRIES) break;
@@ -468,95 +455,24 @@ void fetchRoster() {
     strncpy(g_roster[n].type, ty, 9);  g_roster[n].type[9]  = '\0';
     n++;
   }
-  g_rosterCount   = n;
+  g_rosterCount = n;
+  xSemaphoreGive(xRosterMutex);
+
   g_rosterVersion = String(doc["rosterVersion"] | "0");
-  lastRosterMs    = millis();
-  Serial.printf("[Roster] Cached %d entries (v%s)\n", g_rosterCount, g_rosterVersion.c_str());
-  updateClock();
+  Serial.printf("[Roster] Cached %d entries (v%s)\n", n, g_rosterVersion.c_str());
+  if (!silent) updateClock();
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  11. UPLOAD OFFLINE QUEUE (called when WiFi restores)
-// ════════════════════════════════════════════════════════════════
-
-void uploadOffline() {
-  if (!SPIFFS.exists("/queue.txt")) return;
-  Serial.println("[SPIFFS] Uploading offline records...");
-  lcdMsg("Syncing offline ", "Please wait...  ");
-
-  File f = SPIFFS.open("/queue.txt", FILE_READ);
-  if (!f) return;
-
-  File tmp = SPIFFS.open("/queue_tmp.txt", FILE_WRITE);
-  int synced = 0, failed = 0;
-
-  while (f.available()) {
-    String line = f.readStringUntil('\n');
-    line.trim();
-    if (line.isEmpty()) continue;
-
-    // Parse uid|date|intime|outtime|status  (status optional for v4.0 records)
-    String parts[5];
-    int idx = 0, start = 0;
-    for (int i = 0; i <= (int)line.length() && idx < 5; i++) {
-      if (i == (int)line.length() || line[i] == '|') {
-        parts[idx++] = line.substring(start, i);
-        start = i + 1;
-      }
-    }
-    if (idx < 4) { tmp.println(line); failed++; continue; } // malformed
-
-    String inT    = (parts[2] == "-") ? "" : parts[2];
-    String outT   = (parts[3] == "-") ? "" : parts[3];
-    String status = (idx > 4 && parts[4].length() > 0) ? parts[4] : "ON_TIME";
-
-    String resp = sendLog(parts[0], parts[1], inT, outT, status);
-
-    StaticJsonDocument<256> doc;
-    bool ok = false;
-    if (deserializeJson(doc, resp) == DeserializationError::Ok) {
-      ok = doc["ok"] | false;
-    }
-
-    if (ok) {
-      synced++;
-    } else {
-      tmp.println(line);
-      failed++;
-    }
-    delay(400);
-  }
-
-  f.close();
-  tmp.close();
-
-  SPIFFS.remove("/queue.txt");
-  if (failed > 0) {
-    SPIFFS.rename("/queue_tmp.txt", "/queue.txt");
-  } else {
-    SPIFFS.remove("/queue_tmp.txt");
-  }
-
-  offlineCount = failed;
-  Serial.printf("[SPIFFS] Synced %d, retained %d\n", synced, failed);
-  updateClock();
-}
-
-
-// ════════════════════════════════════════════════════════════════
-//  11b. DRAIN ONE OFFLINE RECORD (called during idle — non-blocking to user)
-//  Sends the first queue record to GAS and removes it on success.
-//  Leaves the record in place on failure so it can be retried.
+//  11. DRAIN ONE OFFLINE RECORD  (net task only — single writer)
 // ════════════════════════════════════════════════════════════════
 
 void drainOneRecord() {
   if (!SPIFFS.exists("/queue.txt")) { offlineCount = 0; return; }
-
   File src = SPIFFS.open("/queue.txt", FILE_READ);
   if (!src) return;
 
-  // Read first valid line; copy the rest to a temp file
   String firstLine = "";
   while (src.available()) {
     String l = src.readStringUntil('\n'); l.trim();
@@ -575,7 +491,6 @@ void drainOneRecord() {
     offlineCount = 0; return;
   }
 
-  // Parse: uid|date|intime|outtime|status
   String parts[5]; int idx = 0, start = 0;
   for (int i = 0; i <= (int)firstLine.length() && idx < 5; i++) {
     if (i == (int)firstLine.length() || firstLine[i] == '|') {
@@ -583,7 +498,7 @@ void drainOneRecord() {
     }
   }
 
-  bool discard = (idx < 4); // malformed line — drop it
+  bool discard = (idx < 4);
   if (!discard) {
     String inT  = (parts[2] == "-") ? "" : parts[2];
     String outT = (parts[3] == "-") ? "" : parts[3];
@@ -591,20 +506,26 @@ void drainOneRecord() {
     String resp = sendLog(parts[0], parts[1], inT, outT, stat);
     StaticJsonDocument<256> doc;
     bool ok = false;
-    if (deserializeJson(doc, resp) == DeserializationError::Ok) ok = doc["ok"] | false;
-    discard = ok; // drop from queue only when server confirmed
+    if (deserializeJson(doc, resp) == DeserializationError::Ok) {
+      ok = doc["ok"] | false;
+      // no_entry on OUT: create a synthetic IN then retry
+      if (!ok && outT.length() && String(doc["msg"] | "") == "no_entry") {
+        sendLog(parts[0], parts[1], outT, "", "ON_TIME");
+        String r2 = sendLog(parts[0], parts[1], "", outT, stat);
+        if (deserializeJson(doc, r2) == DeserializationError::Ok) ok = doc["ok"] | false;
+      }
+    }
+    discard = ok;
   }
 
   if (discard) {
-    // Success (or malformed): replace queue with temp (first line removed)
     SPIFFS.remove("/queue.txt");
     if (remaining > 0) SPIFFS.rename("/qtmp.txt", "/queue.txt");
     else               SPIFFS.remove("/qtmp.txt");
     offlineCount = remaining;
-    Serial.printf("[Queue] Drained 1 record; %d remaining\n", remaining);
+    Serial.printf("[Queue] Drained 1; %d left\n", remaining);
   } else {
-    // Failed: leave original queue.txt; discard temp
-    SPIFFS.remove("/qtmp.txt");
+    SPIFFS.remove("/qtmp.txt"); // keep original on failure
   }
 }
 
@@ -625,168 +546,107 @@ String readUID() {
 
 
 // ════════════════════════════════════════════════════════════════
-//  13. NORMAL MODE — attendance scan
+//  13. NORMAL MODE  (Core 1 — ZERO HTTP — always < 50 ms)
 //
-//  LCD row formats (all exactly 16 chars):
-//    Check-in:   "IN  HH:MM  XXXXX"   XXXXX = OK   / LATE  / E.ARR
-//                "Name (padded)    "
-//    Check-out:  "OUT HH:MM  XXXXX"   XXXXX = 2.5h / OT    / E.DEP
-//                "Name (padded)    "
-//    Offline:    "IN  (Offline)   "
-//                "HH:MM  Q:N      "
+//  Flow: NVS read → roster lookup → build display → LCD+beep → push event
+//  Net task picks up the event and handles all GAS communication.
+//
+//  LCD formats (exactly 16 chars):
+//    "IN  HH:MM  XXXXX"   XXXXX = OK    / LATE  / E.ARR
+//    "OUT HH:MM  XXXXX"   XXXXX = 2.5h / OT    / E.DEP
+//    name line padded to 16 chars
 // ════════════════════════════════════════════════════════════════
 
 void processNormal(const String& uid) {
-  DateTime t  = rtc.now();
+  DateTime t = rtc.now();
   int h = t.hour(), m = t.minute();
   String date    = getDateStr();
   String timeNow = getTimeStr();
 
-  // ── Guard: prevent OUT if no check-in recorded today ─────────
-  // NVS stores the date of the last successful IN; if it isn't today,
-  // force an IN regardless of what the NVS toggle says.
-  bool isIn = getStatus(uid);  // true = about to do IN
-  if (!isIn && getCheckInDate(uid) != date) {
-    isIn = true;  // no entry on record for today — redirect to IN
-  }
+  // ── NVS read (one mutex take covers all NVS calls) ────────────
+  bool   isIn;
+  String checkInDate, checkInTime;
+  xSemaphoreTake(xNvsMutex, portMAX_DELAY);
+  isIn        = _getStatus(uid);
+  checkInDate = _getCheckInDate(uid);
+  checkInTime = _getCheckInTime(uid);
+  xSemaphoreGive(xNvsMutex);
 
-  // ── Instant local cache lookup (< 1 ms) ──────────────────────
+  // Guard: cannot check-out without today's check-in
+  if (!isIn && checkInDate != date) isIn = true;
+
+  // ── Roster lookup ─────────────────────────────────────────────
   char cachedName[33] = "";
   char cachedType[10] = "Student";
+  int  cacheSize;
+  xSemaphoreTake(xRosterMutex, portMAX_DELAY);
   bool known = lookupRoster(uid, cachedName, cachedType);
+  cacheSize  = g_rosterCount;
+  xSemaphoreGive(xRosterMutex);
 
-  // Cache populated but this UID not found → unknown card
-  if (!known && g_rosterCount > 0) {
-    char l1[17];
-    snprintf(l1, sizeof(l1), "%-16s", uid.substring(0, 16).c_str());
+  if (!known && cacheSize > 0) {
+    // Cache is populated but this UID is not enrolled
+    char l1[17]; snprintf(l1, sizeof(l1), "%-16s", uid.substring(0, 16).c_str());
     showResult("X Unknown Card  ", l1, 2500);
     return;
   }
 
   String status = determineStatus(isIn, h, m);
 
-  // ══ FAST PATH: cache hit ══════════════════════════════════════
-  // Show result and beep immediately; log is queued for background sync.
-  if (known) {
-    char line0[17], line1[17];
-    snprintf(line1, sizeof(line1), "%-16s", String(cachedName).substring(0, 16).c_str());
-
-    if (isIn) {
-      saveCheckInTime(uid, timeNow);
-      saveCheckInDate(uid, date);             // arm the day-guard for next OUT
-      snprintf(line0, sizeof(line0), "IN  %s  %s", timeNow.c_str(), statusLabel(status));
-      setStatus(uid, false);                  // next scan = OUT
-      beepIn();
-      saveOffline(uid, date, timeNow, "", status);
-    } else {
-      String inStored = getCheckInTime(uid);
-      String info = (status == "OVERTIME" || status == "EARLY_DEP")
-        ? String(statusLabel(status))
-        : calcHoursLcd(inStored, timeNow);
-      snprintf(line0, sizeof(line0), "OUT %s  %s", timeNow.c_str(), info.c_str());
-      setStatus(uid, true);                   // next scan = IN
-      beepOut();
-      saveOffline(uid, date, "", timeNow, status);
-    }
-
-    strncpy(g_lcdRow0, line0, 16); g_lcdRow0[16] = '\0';
-    strncpy(g_lcdRow1, line1, 16); g_lcdRow1[16] = '\0';
-    lcd.clear();
-    lcd.setCursor(0, 0); lcd.print(line0);
-    lcd.setCursor(0, 1); lcd.print(line1);
-    delay(2500);
-    updateClock();
-    return;
-  }
-
-  // ══ SLOW PATH (fallback): roster cache empty — use HTTP ══════
-  // Only reached on first boot before fetchRoster() succeeds.
-  lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("Scanning card...");
-  lcd.setCursor(0, 1); lcd.print(uid.substring(0, 16));
-
-  String inT  = isIn ? timeNow : "";
-  String outT = isIn ? ""      : timeNow;
-
-  if (!wifiOk) {
-    saveOffline(uid, date, inT, outT, status);
-    if (isIn) { saveCheckInTime(uid, timeNow); saveCheckInDate(uid, date); beepIn(); }
-    else beepOut();
-    setStatus(uid, !isIn);
-    char l1[17];
-    snprintf(l1, sizeof(l1), "%-16s", (timeNow + "  Q:" + String(offlineCount)).c_str());
-    showResult(isIn ? "IN  (Offline)   " : "OUT (Offline)   ", l1, 2500);
-    return;
-  }
-
-  String resp = sendLog(uid, date, inT, outT, status);
-
-  if (resp.isEmpty()) {
-    saveOffline(uid, date, inT, outT, status);
-    if (isIn) { saveCheckInTime(uid, timeNow); saveCheckInDate(uid, date); beepIn(); }
-    else beepOut();
-    setStatus(uid, !isIn);
-    char l1[17];
-    snprintf(l1, sizeof(l1), "%-16s", (timeNow + "  Q:" + String(offlineCount)).c_str());
-    showResult(isIn ? "IN  (Offline)   " : "OUT (Offline)   ", l1, 2500);
-    return;
-  }
-
-  bool   ok    = false;
-  String name  = "";
-  String event = isIn ? "IN" : "OUT";
-  StaticJsonDocument<256> doc;
-  if (deserializeJson(doc, resp) == DeserializationError::Ok) {
-    ok    = doc["ok"]    | false;
-    name  = doc["name"]  | "";
-    event = doc["event"] | (isIn ? "IN" : "OUT");
-
-    // Server-side guard: no IN record for today → retry as IN
-    if (!ok && String(doc["msg"] | "") == "no_entry") {
-      showResult("No entry today! ", "Logging IN now  ", 1500);
-      inT = timeNow; outT = ""; isIn = true;
-      status = determineStatus(true, h, m);
-      resp = sendLog(uid, date, inT, outT, status);
-      ok = false; name = "";
-      if (!resp.isEmpty() &&
-          deserializeJson(doc, resp) == DeserializationError::Ok) {
-        ok    = doc["ok"]    | false;
-        name  = doc["name"]  | "";
-        event = doc["event"] | "IN";
-      }
-    }
-  }
-
-  if (!ok || name.isEmpty()) {
-    char l1[17];
-    snprintf(l1, sizeof(l1), "%-16s", uid.substring(0, 16).c_str());
-    showResult("X Unknown Card  ", l1, 2500);
-    return;
-  }
-
-  setStatus(uid, event == "OUT");
+  // ── Build display lines ───────────────────────────────────────
   char line0[17], line1[17];
-  if (event == "IN") {
-    saveCheckInTime(uid, timeNow);
-    saveCheckInDate(uid, date);
+  snprintf(line1, sizeof(line1), "%-16s",
+    (known ? String(cachedName) : uid).substring(0, 16).c_str());
+
+  ScanEvent evt = {};
+  strncpy(evt.uid,    uid.c_str(),    15);
+  strncpy(evt.date,   date.c_str(),   11);
+  strncpy(evt.status, status.c_str(), 11);
+
+  if (isIn) {
     snprintf(line0, sizeof(line0), "IN  %s  %s", timeNow.c_str(), statusLabel(status));
-    snprintf(line1, sizeof(line1), "%-16s", name.substring(0, 16).c_str());
+    strncpy(evt.inTime, timeNow.c_str(), 5);
+
+    xSemaphoreTake(xNvsMutex, portMAX_DELAY);
+    _saveCheckInTime(uid, timeNow);
+    _saveCheckInDate(uid, date);
+    _setStatus(uid, false);  // next scan = OUT
+    xSemaphoreGive(xNvsMutex);
+
+    lcdRowSet(line0, line1);
+    lcd.clear(); lcd.setCursor(0,0); lcd.print(line0);
+                 lcd.setCursor(0,1); lcd.print(line1);
     beepIn();
+
   } else {
-    String inStored = getCheckInTime(uid);
     String info = (status == "OVERTIME" || status == "EARLY_DEP")
-      ? String(statusLabel(status))
-      : calcHoursLcd(inStored, timeNow);
+      ? String(statusLabel(status)) : calcHoursLcd(checkInTime, timeNow);
     snprintf(line0, sizeof(line0), "OUT %s  %s", timeNow.c_str(), info.c_str());
-    snprintf(line1, sizeof(line1), "%-16s", name.substring(0, 16).c_str());
+    strncpy(evt.outTime, timeNow.c_str(), 5);
+
+    xSemaphoreTake(xNvsMutex, portMAX_DELAY);
+    _setStatus(uid, true);   // next scan = IN
+    xSemaphoreGive(xNvsMutex);
+
+    lcdRowSet(line0, line1);
+    lcd.clear(); lcd.setCursor(0,0); lcd.print(line0);
+                 lcd.setCursor(0,1); lcd.print(line1);
     beepOut();
   }
-  showResult(line0, line1, 2500);
+
+  // Push to net task — non-blocking (if queue full, event is dropped gracefully)
+  if (xQueueSend(g_netQueue, &evt, 0) != pdTRUE) {
+    Serial.println("[Queue] Full — saving directly offline");
+    saveOffline(uid, date, String(evt.inTime), String(evt.outTime), status);
+  }
+
+  delay(2500);
+  updateClock();
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  14. ADMIN MODE — push UID to pending queue on server
+//  14. ADMIN MODE  (Core 1; HTTP allowed here — admin use is rare)
 // ════════════════════════════════════════════════════════════════
 
 void processAdmin(const String& uid) {
@@ -794,45 +654,118 @@ void processAdmin(const String& uid) {
   lcd.setCursor(0, 0); lcd.print("Sending to web..");
   lcd.setCursor(0, 1); lcd.print(uid.substring(0, 16));
 
-  if (!wifiOk) {
-    showResult("No WiFi!        ", "Need WiFi 4 enrl", 2500);
-    return;
-  }
+  if (!wifiOk) { showResult("No WiFi!        ", "Need WiFi 4 enrl", 2500); return; }
 
   String resp = pushAdminScan(uid);
-  if (resp.isEmpty()) {
-    showResult("Server Error    ", "Try again       ", 2500);
-    return;
-  }
+  if (resp.isEmpty()) { showResult("Server Error    ", "Try again       ", 2500); return; }
 
   StaticJsonDocument<256> doc;
-  bool   ok       = false;
-  bool   existing = false;
-  String name     = "";
-
+  bool ok = false, existing = false; String name = "";
   if (deserializeJson(doc, resp) == DeserializationError::Ok) {
-    ok       = doc["ok"]       | false;
-    existing = doc["existing"] | false;
-    name     = doc["name"]     | "";
+    ok = doc["ok"] | false; existing = doc["existing"] | false; name = doc["name"] | "";
   }
-
-  if (!ok) {
-    showResult("Server Error    ", "Try again       ", 2500);
-    return;
-  }
+  if (!ok) { showResult("Server Error    ", "Try again       ", 2500); return; }
 
   if (existing) {
     char l0[17];
     snprintf(l0, sizeof(l0), "%-16s", ("Enrolled: " + name).substring(0, 16).c_str());
     showResult(l0, "Scan another crd", 2500);
   } else {
-    char l1[17];
-    snprintf(l1, sizeof(l1), "%-16s", uid.substring(0, 16).c_str());
+    char l1[17]; snprintf(l1, sizeof(l1), "%-16s", uid.substring(0, 16).c_str());
     showResult("Card Sent! ->   ", "Fill at web app ", 2500);
   }
-
-  // Reset admin timeout on each successful scan
   adminModeMs = millis();
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  15. NET TASK  (Core 0 — ALL HTTP lives here)
+//
+//  Priority 2 on Core 0; loop() runs at priority 1 on Core 1.
+//  Since they are on separate cores they run in true parallel.
+//  xHttpMutex ensures admin-mode HTTP (Core 1) and netTask HTTP
+//  (Core 0) never overlap at the WiFi stack level.
+// ════════════════════════════════════════════════════════════════
+
+void netTask(void* param) {
+  unsigned long lastWifiCheck = 0;
+  unsigned long lastHeartbeat = 0;
+  unsigned long lastRoster    = millis();  // boot fetch already done
+  unsigned long lastSettings  = millis();
+  unsigned long lastDrain     = 0;
+  ScanEvent evt;
+
+  for (;;) {
+    // ── Drain scan-event queue (highest priority in net task) ─────
+    while (xQueueReceive(g_netQueue, &evt, 0) == pdTRUE) {
+      String uid    = String(evt.uid);
+      String date   = String(evt.date);
+      String inT    = String(evt.inTime);
+      String outT   = String(evt.outTime);
+      String status = String(evt.status);
+
+      if (wifiOk) {
+        String resp = sendLog(uid, date, inT, outT, status);
+        StaticJsonDocument<256> doc;
+        bool ok = false;
+        if (deserializeJson(doc, resp) == DeserializationError::Ok) {
+          ok = doc["ok"] | false;
+          // Server no_entry on OUT: synthesise an IN record first then retry
+          if (!ok && outT.length() && String(doc["msg"] | "") == "no_entry") {
+            sendLog(uid, date, outT, "", "ON_TIME");
+            String r2 = sendLog(uid, date, "", outT, status);
+            if (deserializeJson(doc, r2) == DeserializationError::Ok) ok = doc["ok"] | false;
+          }
+        }
+        if (!ok) saveOffline(uid, date, inT, outT, status);
+      } else {
+        saveOffline(uid, date, inT, outT, status);
+      }
+    }
+
+    unsigned long now = millis();
+
+    // ── WiFi watchdog ─────────────────────────────────────────────
+    if (now - lastWifiCheck > WIFI_CHECK_MS) {
+      lastWifiCheck = now;
+      bool wasOk = wifiOk;
+      if (WiFi.status() != WL_CONNECTED) { wifiOk = false; connectWiFi(); }
+      if (!wasOk && wifiOk) { fetchRoster(true); lastRoster = millis(); }
+    }
+
+    // ── Heartbeat (every 15 s) ────────────────────────────────────
+    if (wifiOk && now - lastHeartbeat > HEARTBEAT_MS) {
+      lastHeartbeat = now;
+      sendHeartbeat();
+    }
+
+    // ── Drain one offline record when idle (3 s since last scan) ──
+    if (wifiOk && offlineCount > 0 &&
+        (millis() - lastScanMs > 3000) && (now - lastDrain > 500)) {
+      lastDrain = millis();
+      drainOneRecord();
+    }
+
+    // ── Hourly roster refresh (retry every 60 s while cache empty) ──
+    {
+      unsigned long interval = (g_rosterCount == 0) ? 60000UL : (unsigned long)ROSTER_REFRESH_MS;
+      if (wifiOk && now - lastRoster > interval) {
+        lastRoster = millis(); fetchRoster(true);
+      }
+    }
+
+    // ── Hourly settings refresh ───────────────────────────────────
+    if (wifiOk && now - lastSettings > SETTINGS_REFRESH_MS) {
+      lastSettings = millis(); fetchSettings();
+    }
+
+    // Yield: sleep up to 50 ms, wake immediately if a scan event arrives
+    xQueueReceive(g_netQueue, &evt, pdMS_TO_TICKS(50));
+    // If an item was pulled here, put it back so the top-of-loop handles it
+    // (xQueueSendToFront, non-blocking)
+    if (evt.uid[0]) xQueueSendToFront(g_netQueue, &evt, 0);
+    memset(&evt, 0, sizeof(evt));
+  }
 }
 
 
@@ -842,33 +775,27 @@ void processAdmin(const String& uid) {
 
 void setup() {
   Serial.begin(115200);
-  Serial.println(F("\n=== Smart RFID Attendance v4.1 ==="));
+  Serial.println(F("\n=== Smart RFID Attendance v4.2 ==="));
 
-  // GPIO
   pinMode(BUZZER,    OUTPUT); digitalWrite(BUZZER, LOW);
   pinMode(ADMIN_BTN, INPUT_PULLUP);
 
-  // I2C + LCD
   Wire.begin(SDA_PIN, SCL_PIN);
-  lcd.init();
-  lcd.backlight();
+  lcd.init(); lcd.backlight();
   lcdMsg("Smart Attendance", ORG_NAME);
   delay(2000);
 
-  // RTC
   if (!rtc.begin()) {
     lcdMsg("RTC Error!      ", "Check wiring    ");
-    Serial.println("[RTC] Not found — check wiring and RTClib install");
+    Serial.println("[RTC] Not found");
     while (1) delay(1000);
   }
   if (rtc.lostPower()) {
-    // Set to compile time when RTC battery is dead; user can adjust via serial later
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     Serial.println("[RTC] Lost power — reset to compile time");
   }
   Serial.printf("[RTC] %s %s\n", getDateStr().c_str(), getTimeStr().c_str());
 
-  // SPIFFS
   if (!SPIFFS.begin(true)) {
     Serial.println("[SPIFFS] Mount failed");
   } else {
@@ -879,110 +806,80 @@ void setup() {
         if (!l.isEmpty()) offlineCount++;
       }
       f.close();
-      Serial.printf("[SPIFFS] %d pending record(s)\n", offlineCount);
+      Serial.printf("[SPIFFS] %d pending record(s)\n", (int)offlineCount);
     }
   }
 
-  // Preferences (per-card state)
   prefs.begin("attend", false);
 
-  // RFID
   SPI.begin();
   rfid.PCD_Init();
   delay(50);
   Serial.println(F("[RFID] Ready"));
 
-  // WiFi
+  // Create RTOS primitives before any task or WiFi use
+  xRosterMutex = xSemaphoreCreateMutex();
+  xNvsMutex    = xSemaphoreCreateMutex();
+  xLcdRowMutex = xSemaphoreCreateMutex();
+  xHttpMutex   = xSemaphoreCreateMutex();
+  g_netQueue   = xQueueCreate(NET_QUEUE_LEN, sizeof(ScanEvent));
+
+  // Initial data pull (synchronous — tasks not yet running)
   lcdMsg("Connecting WiFi.", WIFI_SSID);
   connectWiFi();
-
-  // Fetch remote time-threshold settings (overrides config.h defaults)
   fetchSettings();
+  fetchRoster(false);  // shows "Loading roster.." on LCD
 
-  // Download roster into RAM cache (enables instant scan feedback)
-  fetchRoster();
-
-  // Offline records drain gradually via drainOneRecord() in loop()
+  // Net task on Core 0, priority 2  (loop() is priority 1 on Core 1)
+  xTaskCreatePinnedToCore(netTask, "netTask", 12288, NULL, 2, NULL, 0);
 
   updateClock();
-  Serial.println(F("[SYS] Ready\n"));
+  Serial.println(F("[SYS] Ready — Core 1: RFID/LCD | Core 0: HTTP\n"));
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  LOOP
+//  LOOP  (Core 1 — RFID, button, clock ONLY — zero HTTP)
 // ════════════════════════════════════════════════════════════════
 
 void loop() {
   unsigned long now = millis();
 
-  // ── Admin mode: hold BOOT button for ADMIN_HOLD_MS ────────
+  // ── Admin button (hold BOOT for ADMIN_HOLD_MS) ────────────────
   bool btnLow = (digitalRead(ADMIN_BTN) == LOW);
   if (btnLow && !btnWasLow) { btnWasLow = true; btnLowMs = now; }
   if (btnLow && btnWasLow && (now - btnLowMs >= ADMIN_HOLD_MS)) {
     adminMode   = !adminMode;
     adminModeMs = now;
     btnWasLow   = false;
-    Serial.printf("[BTN] Admin mode %s\n", adminMode ? "ON" : "OFF");
-    updateClock();
-    delay(300);
+    Serial.printf("[BTN] Admin %s\n", adminMode ? "ON" : "OFF");
+    updateClock(); delay(300);
   }
   if (!btnLow) btnWasLow = false;
 
-  // ── Admin auto-timeout ─────────────────────────────────────
+  // ── Admin auto-timeout ────────────────────────────────────────
   if (adminMode && (now - adminModeMs > ADMIN_TIMEOUT_MS)) {
     adminMode = false;
-    Serial.println("[BTN] Admin mode timed out");
+    Serial.println("[BTN] Admin timeout");
     updateClock();
   }
 
-  // ── WiFi watchdog ─────────────────────────────────────────
-  if (now - lastWifiMs > WIFI_CHECK_MS) {
-    lastWifiMs = now;
-    bool wasOk = wifiOk;
-    if (WiFi.status() != WL_CONNECTED) { wifiOk = false; connectWiFi(); }
-    if (!wasOk && wifiOk) {
-      fetchRoster();     // refresh cache after reconnect
-      updateClock();
-    }
-  }
-
-  // ── Roster refresh (hourly; retry every 60 s while cache is empty) ──
-  {
-    unsigned long interval = (g_rosterCount == 0) ? 60000UL : ROSTER_REFRESH_MS;
-    if (wifiOk && (now - lastRosterMs > interval)) fetchRoster();
-  }
-
-  // ── Drain one offline record per idle cycle (3 s after last scan) ──
-  if (wifiOk && offlineCount > 0 && (now - lastScanMs > 3000) && (now - lastDrainMs > 500)) {
-    lastDrainMs = now;
-    drainOneRecord();
-  }
-
-  // ── Clock update (1 s) ────────────────────────────────────
+  // ── Clock update (1 s) ────────────────────────────────────────
   if (now - lastClockMs > 1000) { lastClockMs = now; updateClock(); }
 
-  // ── Heartbeat to GAS (every 15 s) ────────────────────────
-  if (now - lastHeartbeatMs > HEARTBEAT_MS) {
-    lastHeartbeatMs = now;
-    sendHeartbeat();
-  }
-
-  // ── RFID poll ─────────────────────────────────────────────
+  // ── RFID poll ─────────────────────────────────────────────────
   if (!rfid.PICC_IsNewCardPresent()) return;
   if (!rfid.PICC_ReadCardSerial())   return;
 
   String uid = readUID();
 
-  // Debounce: ignore same card within SCAN_DEBOUNCE_MS
   if (uid == lastUID && (now - lastScanMs) < SCAN_DEBOUNCE_MS) {
-    rfid.PICC_HaltA();
-    return;
+    rfid.PICC_HaltA(); return;
   }
   lastUID    = uid;
   lastScanMs = now;
 
-  Serial.printf("[RFID] Card: %s  Admin:%d\n", uid.c_str(), adminMode);
+  Serial.printf("[RFID] %s  admin=%d\n", uid.c_str(), (bool)adminMode);
 
   if (adminMode) processAdmin(uid);
   else           processNormal(uid);

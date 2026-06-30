@@ -48,7 +48,9 @@ Preferences       prefs;
 SemaphoreHandle_t xRosterMutex;  // guards g_roster[] between cores
 SemaphoreHandle_t xNvsMutex;     // guards Preferences (not thread-safe)
 SemaphoreHandle_t xLcdRowMutex;  // guards g_lcdRow snapshot for heartbeat
-SemaphoreHandle_t xHttpMutex;    // one HTTP call at a time (admin + net task)
+// NOTE: No HTTP mutex — each httpGet() creates independent WiFiClientSecure+
+// HTTPClient locals; LwIP is thread-safe. A shared mutex caused TWDT restarts
+// when processAdmin() blocked portMAX_DELAY while netTask held it for 5-9 s.
 
 // ── Scan → net task queue ────────────────────────────────────────
 #define NET_QUEUE_LEN 30
@@ -324,12 +326,14 @@ void saveOffline(const String& uid, const String& date,
 
 
 // ════════════════════════════════════════════════════════════════
-//  9. HTTP  (protected by xHttpMutex — allows admin scan on Core 1
-//            to coexist safely with net task HTTP on Core 0)
+//  9. HTTP
 // ════════════════════════════════════════════════════════════════
 
 String httpGet(const String& url) {
-  xSemaphoreTake(xHttpMutex, portMAX_DELAY);
+  // No mutex: each call uses its own local WiFiClientSecure+HTTPClient.
+  // LwIP is internally thread-safe; concurrent calls from Core 0 and Core 1
+  // are safe. A shared mutex caused a DEADLOCK: sendHeartbeat() held it, then
+  // called fetchRoster()/fetchSettings() which tried to take it again.
   WiFiClientSecure client; client.setInsecure();
   HTTPClient http;
   http.begin(client, url);
@@ -338,8 +342,7 @@ String httpGet(const String& url) {
   int code = http.GET();
   String body = (code > 0) ? http.getString() : "";
   http.end();
-  xSemaphoreGive(xHttpMutex);
-  Serial.printf("[HTTP] %d\n", code);
+  Serial.printf("[HTTP] %d  heap=%d\n", code, (int)ESP.getFreeHeap());
   return body;
 }
 
@@ -684,8 +687,8 @@ void processAdmin(const String& uid) {
 //
 //  Priority 2 on Core 0; loop() runs at priority 1 on Core 1.
 //  Since they are on separate cores they run in true parallel.
-//  xHttpMutex ensures admin-mode HTTP (Core 1) and netTask HTTP
-//  (Core 0) never overlap at the WiFi stack level.
+//  No HTTP mutex needed — each httpGet() uses its own local client
+//  objects; LwIP handles concurrent sockets safely.
 // ════════════════════════════════════════════════════════════════
 
 void netTask(void* param) {
@@ -731,7 +734,12 @@ void netTask(void* param) {
       lastWifiCheck = now;
       bool wasOk = wifiOk;
       if (WiFi.status() != WL_CONNECTED) { wifiOk = false; connectWiFi(); }
-      if (!wasOk && wifiOk) { fetchRoster(true); lastRoster = millis(); }
+      if (!wasOk && wifiOk) {
+        // First online: fetch both settings AND roster so the device is
+        // fully configured even if WiFi was absent during setup().
+        fetchSettings(); lastSettings = millis();
+        fetchRoster(true); lastRoster = millis();
+      }
     }
 
     // ── Heartbeat (every 15 s) ────────────────────────────────────
@@ -778,14 +786,23 @@ void setup() {
   Serial.begin(115200);
   Serial.println(F("\n=== Smart RFID Attendance v4.2 ==="));
 
-  // MUST be first: every lcdMsg/updateClock calls lcdRowSet which takes xLcdRowMutex.
-  // Creating mutexes after any LCD call causes xSemaphoreTake(NULL) → FreeRTOS assert → reboot loop.
+  // ── Mutexes FIRST ────────────────────────────────────────────────
+  // Every lcdMsg/updateClock calls lcdRowSet → xSemaphoreTake(xLcdRowMutex).
+  // Null mutex → FreeRTOS assert → abort() → reboot loop.
   xRosterMutex = xSemaphoreCreateMutex();
   xNvsMutex    = xSemaphoreCreateMutex();
   xLcdRowMutex = xSemaphoreCreateMutex();
-  xHttpMutex   = xSemaphoreCreateMutex();
   g_netQueue   = xQueueCreate(NET_QUEUE_LEN, sizeof(ScanEvent));
 
+  // ── WiFi start (non-blocking) ─────────────────────────────────────
+  // Begin before hardware init so WiFi connects during the 2 s splash.
+  // By the time we reach the status check below (~3 s later), it is
+  // usually already connected — user never sees a "Connecting…" screen.
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("[WiFi] Starting in background");
+
+  // ── GPIO / LCD / RTC / SPIFFS / RFID ─────────────────────────────
   pinMode(BUZZER,    OUTPUT); digitalWrite(BUZZER, LOW);
   pinMode(ADMIN_BTN, INPUT_PULLUP);
 
@@ -793,7 +810,7 @@ void setup() {
   lcd.init(); lcd.backlight();
   lcd.noCursor(); lcd.noBlink();
   lcdMsg("Smart Attendance", ORG_NAME);
-  delay(2000);
+  delay(2000);  // splash — WiFi connecting in background during this
 
   if (!rtc.begin()) {
     lcdMsg("RTC Error!      ", "Check wiring    ");
@@ -804,7 +821,7 @@ void setup() {
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     Serial.println("[RTC] Lost power — reset to compile time");
   }
-  Serial.printf("[RTC] %s %s\n", getDateStr().c_str(), getTimeStr().c_str());
+  Serial.printf("\n[RTC] %s %s\n", getDateStr().c_str(), getTimeStr().c_str());
 
   if (!SPIFFS.begin(true)) {
     Serial.println("[SPIFFS] Mount failed");
@@ -827,17 +844,28 @@ void setup() {
   delay(50);
   Serial.println(F("[RFID] Ready"));
 
-  // Initial data pull (synchronous — net task not yet running)
-  lcdMsg("Connecting WiFi.", WIFI_SSID);
-  connectWiFi();
-  fetchSettings();
-  fetchRoster(false);  // shows "Loading roster.." on LCD
+  // ── WiFi status check (non-blocking, max 3 s extra wait) ─────────
+  // Hardware init above took ~300 ms + 2000 ms splash = ~2.3 s total.
+  // Most connections complete in 1–3 s, so we are often already online.
+  for (int i = 0; i < 6 && WiFi.status() != WL_CONNECTED; i++) {
+    vTaskDelay(pdMS_TO_TICKS(500)); Serial.print(".");
+  }
+  wifiOk = (WiFi.status() == WL_CONNECTED);
+  Serial.println(wifiOk ? "\n[WiFi] Connected" : "\n[WiFi] Offline — net task will retry");
 
-  // Net task on Core 0, priority 2  (loop() is priority 1 on Core 1)
-  xTaskCreatePinnedToCore(netTask, "netTask", 20480, NULL, 2, NULL, 0);
+  if (wifiOk) {
+    fetchSettings();
+    fetchRoster(false);  // shows "Loading roster.." on LCD
+  } else {
+    lcdMsg("Offline Mode    ", "Sync when online");
+    delay(1200);
+  }
+
+  // ── Net task on Core 0 ────────────────────────────────────────────
+  xTaskCreatePinnedToCore(netTask, "netTask", 24576, NULL, 2, NULL, 0);
 
   updateClock();
-  Serial.println(F("[SYS] Ready — Core 1: RFID/LCD | Core 0: HTTP\n"));
+  Serial.printf("[SYS] Ready  heap=%d\n\n", (int)ESP.getFreeHeap());
 }
 
 

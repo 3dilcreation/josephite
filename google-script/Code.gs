@@ -144,6 +144,7 @@ function setup_() {
     sessionToken:   "",
     deviceStatus:   "",
     settingsVersion:"0",
+    rosterVersion:  "0",
     openHour:       "7",  openMin:       "0",
     lateHour:       "9",  lateMin:       "0",
     closeHour:      "20", closeMin:      "0",
@@ -156,6 +157,7 @@ function setup_() {
     if (existing.indexOf(k) === -1) ctrl.appendRow([k, needed[k]]);
   }
 
+  installAutoExitTrigger_();
   PropertiesService.getScriptProperties().setProperty("v41_init", "1");
   Logger.log("Setup complete (v4.1).");
 }
@@ -229,6 +231,7 @@ function rowColor_(status, event) {
   if (status === "EARLY_ARR") return "#E8F4FD";  // light blue — early bird
   if (status === "OVERTIME")  return "#EDE9FE";  // light purple — overtime
   if (status === "EARLY_DEP") return "#FEE2E2";  // light red — left early
+  if (status === "AUTO_EXIT") return "#F1F3F4";  // grey — system auto-exit
   return event === "IN" ? "#D4EDDA" : "#CCE5FF"; // green IN / blue OUT
 }
 
@@ -282,14 +285,17 @@ function logAttendance_(p) {
 
   // OUT
   if (row === -1) {
-    sh.appendRow(buildRow_(type, date, uid, rec, "", outT, status));
-    row = sh.getLastRow();
-  } else {
-    sh.getRange(row, c.out).setValue(outT);
-    var inVal = d[row - 1][c.in - 1];
-    if (inVal) sh.getRange(row, c.hr).setValue(diffHours_(inVal, outT));
-    if (c.st)  sh.getRange(row, c.st).setValue(status);
+    // No IN record for today — reject so ESP32 can correct its local state
+    return {ok: false, msg: "no_entry", event: "OUT", name: rec.name};
   }
+  var inVal = d[row - 1][c.in - 1];
+  if (!inVal) {
+    // Row exists but IN time is missing — same rejection
+    return {ok: false, msg: "no_entry", event: "OUT", name: rec.name};
+  }
+  sh.getRange(row, c.out).setValue(outT);
+  sh.getRange(row, c.hr).setValue(diffHours_(inVal, outT));
+  if (c.st)  sh.getRange(row, c.st).setValue(status);
   colorRow_(sh, row, rowColor_(status, "OUT"));
   return {ok: true, event: "OUT", name: rec.name, type: type, status: status};
 }
@@ -417,7 +423,7 @@ function getRoster_() {
     if (!d[i][0]) continue;
     list.push(rowToRec_(d[i]));
   }
-  return {ok: true, students: list};
+  return {ok: true, students: list, rosterVersion: ctrlGet_("rosterVersion") || "0"};
 }
 
 function enroll_(p) {
@@ -456,6 +462,8 @@ function enroll_(p) {
   }
 
   ctrlSet_("pendingUID", "");
+  var rv = parseInt(ctrlGet_("rosterVersion") || "0") + 1;
+  ctrlSet_("rosterVersion", String(rv));
   return {ok: true, msg: "saved", uid: uid, name: p.name || ""};
 }
 
@@ -466,6 +474,8 @@ function deleteRec_(p) {
   for (var i = 1; i < d.length; i++) {
     if (String(d[i][0]).toLowerCase().trim() === uid.toLowerCase()) {
       sh.deleteRow(i + 1);
+      var rv = parseInt(ctrlGet_("rosterVersion") || "0") + 1;
+      ctrlSet_("rosterVersion", String(rv));
       return {ok: true};
     }
   }
@@ -617,7 +627,11 @@ function heartbeat_(p) {
     seen:  new Date().toISOString()
   });
   ctrlSet_("deviceStatus", status);
-  return {ok: true, settingsVersion: ctrlGet_("settingsVersion") || "0"};
+  return {
+    ok: true,
+    settingsVersion: ctrlGet_("settingsVersion") || "0",
+    rosterVersion:   ctrlGet_("rosterVersion")   || "0"
+  };
 }
 
 function getDeviceStatus_() {
@@ -667,5 +681,61 @@ function setSettings_(p) {
   });
   var v = parseInt(ctrlGet_("settingsVersion") || "0") + 1;
   ctrlSet_("settingsVersion", String(v));
+  installAutoExitTrigger_();  // update trigger if closeHour changed
   return {ok: true, version: String(v)};
+}
+
+// ════════════════════════════════════════════════════════════════
+//  AUTO-EXIT  (runs as a daily time-driven trigger at closeHour)
+//  Fills out-time for anyone still marked IN at end of working day.
+// ════════════════════════════════════════════════════════════════
+
+function autoExit_() {
+  var s      = ss_();
+  var closeH = parseInt(ctrlGet_("closeHour")) || 20;
+  var closeM = parseInt(ctrlGet_("closeMin"))  || 0;
+  var closeTime = (closeH < 10 ? "0" : "") + closeH + ":" +
+                  (closeM < 10 ? "0" : "") + closeM;
+  var today = fmtDate_(new Date());
+  var total = 0;
+
+  [{tab: ATT_STUDENT, type: "Student"},
+   {tab: ATT_STAFF,   type: "Staff"},
+   {tab: ATT_OTHER,   type: "Others"}].forEach(function(x) {
+    var sh = s.getSheetByName(x.tab);
+    if (!sh) return;
+    var d = sh.getDataRange().getDisplayValues();
+    var c = cols_(x.type);
+    for (var i = 1; i < d.length; i++) {
+      if (d[i][0] !== today)      continue;  // not today
+      if (!d[i][c.in  - 1])      continue;  // no in-time
+      if ( d[i][c.out - 1])      continue;  // already checked out
+      var inVal = d[i][c.in - 1];
+      sh.getRange(i + 1, c.out).setValue(closeTime);
+      sh.getRange(i + 1, c.hr).setValue(diffHours_(inVal, closeTime));
+      if (c.st) sh.getRange(i + 1, c.st).setValue("AUTO_EXIT");
+      colorRow_(sh, i + 1, rowColor_("AUTO_EXIT", "OUT"));
+      total++;
+    }
+  });
+
+  Logger.log("autoExit_: " + total + " record(s) auto-exited for " + today + " at " + closeTime);
+  return total;
+}
+
+// Install (or replace) the daily auto-exit time-driven trigger.
+// GAS atHour() granularity is one hour — trigger fires sometime within closeHour.
+// Call this once manually, or it is called automatically by setup_() and setSettings_().
+function installAutoExitTrigger_() {
+  // Remove any existing autoExit_ triggers
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === "autoExit_") ScriptApp.deleteTrigger(t);
+  });
+  var closeH = parseInt(ctrlGet_("closeHour")) || 20;
+  ScriptApp.newTrigger("autoExit_")
+    .timeBased()
+    .atHour(closeH)
+    .everyDays(1)
+    .create();
+  Logger.log("Auto-exit trigger installed for hour " + closeH + ":xx daily.");
 }

@@ -74,7 +74,15 @@ int g_earlyOutMin  = EARLY_OUT_MIN;
 int g_overtimeHour = OVERTIME_HOUR;
 int g_overtimeMin  = OVERTIME_MIN;
 String        g_settingsVersion = "";
+String        g_rosterVersion   = "";
 unsigned long lastHeartbeatMs   = 0;
+unsigned long lastRosterMs      = 0;
+unsigned long lastDrainMs       = 0;
+
+// Local roster cache — downloaded from GAS at boot, held in RAM for instant lookup
+struct RosterEntry { char uid[16]; char name[33]; char type[10]; };
+static RosterEntry g_roster[MAX_ROSTER_ENTRIES];
+int g_rosterCount = 0;
 
 
 // ════════════════════════════════════════════════════════════════
@@ -246,6 +254,19 @@ String getCheckInTime(const String& uid) {
   return prefs.getString(makeTimeKey(uid).c_str(), "");
 }
 
+// "d" prefix + uid key — stores date of last successful check-in (guard against stale OUT)
+String makeInDateKey(const String& uid) {
+  String k = "d" + makeKey(uid);
+  if (k.length() > 15) k = k.substring(0, 15);
+  return k;
+}
+void saveCheckInDate(const String& uid, const String& date) {
+  prefs.putString(makeInDateKey(uid).c_str(), date.c_str());
+}
+String getCheckInDate(const String& uid) {
+  return prefs.getString(makeInDateKey(uid).c_str(), "");
+}
+
 
 // ════════════════════════════════════════════════════════════════
 //  7. STATUS DETERMINATION (uses config.h thresholds)
@@ -284,6 +305,22 @@ String calcHoursLcd(const String& inT, const String& outT) {
   String s = String(buf);
   while ((int)s.length() < 5) s += " ";
   return s.substring(0, 5);
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  7b. ROSTER CACHE LOOKUP (instant — no HTTP)
+// ════════════════════════════════════════════════════════════════
+
+bool lookupRoster(const String& uid, char* outName, char* outType) {
+  for (int i = 0; i < g_rosterCount; i++) {
+    if (uid.equalsIgnoreCase(String(g_roster[i].uid))) {
+      strncpy(outName, g_roster[i].name, 32); outName[32] = '\0';
+      strncpy(outType, g_roster[i].type, 9);  outType[9]  = '\0';
+      return true;
+    }
+  }
+  return false;
 }
 
 
@@ -390,12 +427,52 @@ void sendHeartbeat() {
 
   StaticJsonDocument<256> doc;
   if (deserializeJson(doc, body) != DeserializationError::Ok) return;
+
   String remoteVer = String(doc["settingsVersion"] | "0");
   if (remoteVer != "0" && remoteVer != g_settingsVersion) {
-    Serial.printf("[Heartbeat] Settings changed remote v%s → re-fetching\n", remoteVer.c_str());
+    Serial.printf("[Heartbeat] Settings changed → re-fetching\n");
     fetchSettings();
     updateClock();
   }
+
+  String remoteRosterVer = String(doc["rosterVersion"] | "0");
+  if (remoteRosterVer != "0" && remoteRosterVer != g_rosterVersion) {
+    Serial.printf("[Heartbeat] Roster changed → re-fetching\n");
+    fetchRoster();
+  }
+}
+
+
+void fetchRoster() {
+  if (!wifiOk) return;
+  Serial.println("[Roster] Fetching...");
+  lcdMsg("Loading roster..", "Please wait...  ");
+  String body = httpGet(String(GAS_URL) + "?action=getRoster");
+  if (body.isEmpty()) { Serial.println("[Roster] Empty response"); updateClock(); return; }
+
+  DynamicJsonDocument doc(16384);
+  if (deserializeJson(doc, body) != DeserializationError::Ok) {
+    Serial.println("[Roster] JSON parse error"); updateClock(); return;
+  }
+  if (!(doc["ok"] | false)) { Serial.println("[Roster] ok=false"); updateClock(); return; }
+
+  JsonArray arr = doc["students"].as<JsonArray>();
+  int n = 0;
+  for (JsonObject s : arr) {
+    if (n >= MAX_ROSTER_ENTRIES) break;
+    const char* u  = s["uid"]  | ""; if (!u || !u[0]) continue;
+    const char* nm = s["name"] | "";
+    const char* ty = s["type"] | "Student";
+    strncpy(g_roster[n].uid,  u,  15); g_roster[n].uid[15]  = '\0';
+    strncpy(g_roster[n].name, nm, 32); g_roster[n].name[32] = '\0';
+    strncpy(g_roster[n].type, ty, 9);  g_roster[n].type[9]  = '\0';
+    n++;
+  }
+  g_rosterCount   = n;
+  g_rosterVersion = String(doc["rosterVersion"] | "0");
+  lastRosterMs    = millis();
+  Serial.printf("[Roster] Cached %d entries (v%s)\n", g_rosterCount, g_rosterVersion.c_str());
+  updateClock();
 }
 
 
@@ -468,6 +545,71 @@ void uploadOffline() {
 
 
 // ════════════════════════════════════════════════════════════════
+//  11b. DRAIN ONE OFFLINE RECORD (called during idle — non-blocking to user)
+//  Sends the first queue record to GAS and removes it on success.
+//  Leaves the record in place on failure so it can be retried.
+// ════════════════════════════════════════════════════════════════
+
+void drainOneRecord() {
+  if (!SPIFFS.exists("/queue.txt")) { offlineCount = 0; return; }
+
+  File src = SPIFFS.open("/queue.txt", FILE_READ);
+  if (!src) return;
+
+  // Read first valid line; copy the rest to a temp file
+  String firstLine = "";
+  while (src.available()) {
+    String l = src.readStringUntil('\n'); l.trim();
+    if (!l.isEmpty()) { firstLine = l; break; }
+  }
+  File tmp = SPIFFS.open("/qtmp.txt", FILE_WRITE);
+  int remaining = 0;
+  while (src.available()) {
+    String l = src.readStringUntil('\n'); l.trim();
+    if (!l.isEmpty()) { tmp.println(l); remaining++; }
+  }
+  src.close(); tmp.close();
+
+  if (firstLine.isEmpty()) {
+    SPIFFS.remove("/queue.txt"); SPIFFS.remove("/qtmp.txt");
+    offlineCount = 0; return;
+  }
+
+  // Parse: uid|date|intime|outtime|status
+  String parts[5]; int idx = 0, start = 0;
+  for (int i = 0; i <= (int)firstLine.length() && idx < 5; i++) {
+    if (i == (int)firstLine.length() || firstLine[i] == '|') {
+      parts[idx++] = firstLine.substring(start, i); start = i + 1;
+    }
+  }
+
+  bool discard = (idx < 4); // malformed line — drop it
+  if (!discard) {
+    String inT  = (parts[2] == "-") ? "" : parts[2];
+    String outT = (parts[3] == "-") ? "" : parts[3];
+    String stat = (idx > 4 && parts[4].length()) ? parts[4] : "ON_TIME";
+    String resp = sendLog(parts[0], parts[1], inT, outT, stat);
+    StaticJsonDocument<256> doc;
+    bool ok = false;
+    if (deserializeJson(doc, resp) == DeserializationError::Ok) ok = doc["ok"] | false;
+    discard = ok; // drop from queue only when server confirmed
+  }
+
+  if (discard) {
+    // Success (or malformed): replace queue with temp (first line removed)
+    SPIFFS.remove("/queue.txt");
+    if (remaining > 0) SPIFFS.rename("/qtmp.txt", "/queue.txt");
+    else               SPIFFS.remove("/qtmp.txt");
+    offlineCount = remaining;
+    Serial.printf("[Queue] Drained 1 record; %d remaining\n", remaining);
+  } else {
+    // Failed: leave original queue.txt; discard temp
+    SPIFFS.remove("/qtmp.txt");
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════
 //  12. RFID UID READER
 // ════════════════════════════════════════════════════════════════
 
@@ -495,62 +637,126 @@ String readUID() {
 // ════════════════════════════════════════════════════════════════
 
 void processNormal(const String& uid) {
-  bool   isIn    = getStatus(uid);
-  DateTime t     = rtc.now();
-  int    h = t.hour(), m = t.minute();
+  DateTime t  = rtc.now();
+  int h = t.hour(), m = t.minute();
   String date    = getDateStr();
   String timeNow = getTimeStr();
-  String inT     = isIn ? timeNow : "";
-  String outT    = isIn ? ""      : timeNow;
-  String status  = determineStatus(isIn, h, m);
 
-  // Show "Scanning..." while waiting for server
+  // ── Guard: prevent OUT if no check-in recorded today ─────────
+  // NVS stores the date of the last successful IN; if it isn't today,
+  // force an IN regardless of what the NVS toggle says.
+  bool isIn = getStatus(uid);  // true = about to do IN
+  if (!isIn && getCheckInDate(uid) != date) {
+    isIn = true;  // no entry on record for today — redirect to IN
+  }
+
+  // ── Instant local cache lookup (< 1 ms) ──────────────────────
+  char cachedName[33] = "";
+  char cachedType[10] = "Student";
+  bool known = lookupRoster(uid, cachedName, cachedType);
+
+  // Cache populated but this UID not found → unknown card
+  if (!known && g_rosterCount > 0) {
+    char l1[17];
+    snprintf(l1, sizeof(l1), "%-16s", uid.substring(0, 16).c_str());
+    showResult("X Unknown Card  ", l1, 2500);
+    return;
+  }
+
+  String status = determineStatus(isIn, h, m);
+
+  // ══ FAST PATH: cache hit ══════════════════════════════════════
+  // Show result and beep immediately; log is queued for background sync.
+  if (known) {
+    char line0[17], line1[17];
+    snprintf(line1, sizeof(line1), "%-16s", String(cachedName).substring(0, 16).c_str());
+
+    if (isIn) {
+      saveCheckInTime(uid, timeNow);
+      saveCheckInDate(uid, date);             // arm the day-guard for next OUT
+      snprintf(line0, sizeof(line0), "IN  %s  %s", timeNow.c_str(), statusLabel(status));
+      setStatus(uid, false);                  // next scan = OUT
+      beepIn();
+      saveOffline(uid, date, timeNow, "", status);
+    } else {
+      String inStored = getCheckInTime(uid);
+      String info = (status == "OVERTIME" || status == "EARLY_DEP")
+        ? String(statusLabel(status))
+        : calcHoursLcd(inStored, timeNow);
+      snprintf(line0, sizeof(line0), "OUT %s  %s", timeNow.c_str(), info.c_str());
+      setStatus(uid, true);                   // next scan = IN
+      beepOut();
+      saveOffline(uid, date, "", timeNow, status);
+    }
+
+    strncpy(g_lcdRow0, line0, 16); g_lcdRow0[16] = '\0';
+    strncpy(g_lcdRow1, line1, 16); g_lcdRow1[16] = '\0';
+    lcd.clear();
+    lcd.setCursor(0, 0); lcd.print(line0);
+    lcd.setCursor(0, 1); lcd.print(line1);
+    delay(2500);
+    updateClock();
+    return;
+  }
+
+  // ══ SLOW PATH (fallback): roster cache empty — use HTTP ══════
+  // Only reached on first boot before fetchRoster() succeeds.
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Scanning card...");
   lcd.setCursor(0, 1); lcd.print(uid.substring(0, 16));
 
-  // ── Offline path ────────────────────────────────────────────
+  String inT  = isIn ? timeNow : "";
+  String outT = isIn ? ""      : timeNow;
+
   if (!wifiOk) {
     saveOffline(uid, date, inT, outT, status);
-    if (isIn) { saveCheckInTime(uid, timeNow); beepIn(); }
+    if (isIn) { saveCheckInTime(uid, timeNow); saveCheckInDate(uid, date); beepIn(); }
     else beepOut();
     setStatus(uid, !isIn);
-
     char l1[17];
     snprintf(l1, sizeof(l1), "%-16s", (timeNow + "  Q:" + String(offlineCount)).c_str());
     showResult(isIn ? "IN  (Offline)   " : "OUT (Offline)   ", l1, 2500);
     return;
   }
 
-  // ── Online path ─────────────────────────────────────────────
   String resp = sendLog(uid, date, inT, outT, status);
 
-  // HTTP failure → treat as offline
   if (resp.isEmpty()) {
     saveOffline(uid, date, inT, outT, status);
-    if (isIn) { saveCheckInTime(uid, timeNow); beepIn(); }
+    if (isIn) { saveCheckInTime(uid, timeNow); saveCheckInDate(uid, date); beepIn(); }
     else beepOut();
     setStatus(uid, !isIn);
-
     char l1[17];
     snprintf(l1, sizeof(l1), "%-16s", (timeNow + "  Q:" + String(offlineCount)).c_str());
     showResult(isIn ? "IN  (Offline)   " : "OUT (Offline)   ", l1, 2500);
     return;
   }
 
-  // ── Parse server response ───────────────────────────────────
   bool   ok    = false;
   String name  = "";
   String event = isIn ? "IN" : "OUT";
-
   StaticJsonDocument<256> doc;
   if (deserializeJson(doc, resp) == DeserializationError::Ok) {
     ok    = doc["ok"]    | false;
     name  = doc["name"]  | "";
     event = doc["event"] | (isIn ? "IN" : "OUT");
+
+    // Server-side guard: no IN record for today → retry as IN
+    if (!ok && String(doc["msg"] | "") == "no_entry") {
+      showResult("No entry today! ", "Logging IN now  ", 1500);
+      inT = timeNow; outT = ""; isIn = true;
+      status = determineStatus(true, h, m);
+      resp = sendLog(uid, date, inT, outT, status);
+      ok = false; name = "";
+      if (!resp.isEmpty() &&
+          deserializeJson(doc, resp) == DeserializationError::Ok) {
+        ok    = doc["ok"]    | false;
+        name  = doc["name"]  | "";
+        event = doc["event"] | "IN";
+      }
+    }
   }
 
-  // Unknown card (not in roster)
   if (!ok || name.isEmpty()) {
     char l1[17];
     snprintf(l1, sizeof(l1), "%-16s", uid.substring(0, 16).c_str());
@@ -558,23 +764,19 @@ void processNormal(const String& uid) {
     return;
   }
 
-  // ── Success ─────────────────────────────────────────────────
-  setStatus(uid, event == "OUT");  // if OUT just happened, next is IN
-
+  setStatus(uid, event == "OUT");
   char line0[17], line1[17];
   if (event == "IN") {
     saveCheckInTime(uid, timeNow);
-    // "IN  HH:MM  XXXXX"  (4 + 5 + 2 + 5 = 16)
+    saveCheckInDate(uid, date);
     snprintf(line0, sizeof(line0), "IN  %s  %s", timeNow.c_str(), statusLabel(status));
     snprintf(line1, sizeof(line1), "%-16s", name.substring(0, 16).c_str());
     beepIn();
   } else {
-    // Show status label for OVERTIME/EARLY_DEP; hours worked otherwise
     String inStored = getCheckInTime(uid);
     String info = (status == "OVERTIME" || status == "EARLY_DEP")
       ? String(statusLabel(status))
       : calcHoursLcd(inStored, timeNow);
-    // "OUT HH:MM  XXXXX"  (4 + 5 + 2 + 5 = 16)
     snprintf(line0, sizeof(line0), "OUT %s  %s", timeNow.c_str(), info.c_str());
     snprintf(line1, sizeof(line1), "%-16s", name.substring(0, 16).c_str());
     beepOut();
@@ -697,8 +899,10 @@ void setup() {
   // Fetch remote time-threshold settings (overrides config.h defaults)
   fetchSettings();
 
-  // Sync any offline records immediately on boot
-  if (wifiOk && offlineCount > 0) uploadOffline();
+  // Download roster into RAM cache (enables instant scan feedback)
+  fetchRoster();
+
+  // Offline records drain gradually via drainOneRecord() in loop()
 
   updateClock();
   Serial.println(F("[SYS] Ready\n"));
@@ -737,11 +941,23 @@ void loop() {
     lastWifiMs = now;
     bool wasOk = wifiOk;
     if (WiFi.status() != WL_CONNECTED) { wifiOk = false; connectWiFi(); }
-    if (!wasOk && wifiOk) updateClock();  // refresh hint on reconnect
+    if (!wasOk && wifiOk) {
+      fetchRoster();     // refresh cache after reconnect
+      updateClock();
+    }
   }
 
-  // ── Sync offline queue on WiFi restore ────────────────────
-  if (wifiOk && offlineCount > 0) uploadOffline();
+  // ── Roster refresh (hourly; retry every 60 s while cache is empty) ──
+  {
+    unsigned long interval = (g_rosterCount == 0) ? 60000UL : ROSTER_REFRESH_MS;
+    if (wifiOk && (now - lastRosterMs > interval)) fetchRoster();
+  }
+
+  // ── Drain one offline record per idle cycle (3 s after last scan) ──
+  if (wifiOk && offlineCount > 0 && (now - lastScanMs > 3000) && (now - lastDrainMs > 500)) {
+    lastDrainMs = now;
+    drainOneRecord();
+  }
 
   // ── Clock update (1 s) ────────────────────────────────────
   if (now - lastClockMs > 1000) { lastClockMs = now; updateClock(); }

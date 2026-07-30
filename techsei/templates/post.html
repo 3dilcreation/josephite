@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% set subpage = true %}
+{% block title %}{{ post.title }} · {{ site.title }}{% endblock %}
+{% block content %}
+  <article class="post">
+    <p class="meta"><a href="../category/{{ category_slug }}.html">{{ post.category }}</a></p>
+    <h1>{{ post.title }}</h1>
+    <p class="meta">
+      {{ post.published | dateformat }} · {{ post.source }}
+      {% if post.generated_by == 'ai' %}· <span class="ai-tag">AI-assisted</span>{% endif %}
+    </p>
+    <div class="post-body">
+      {{ body | safe }}
+    </div>
+    <p class="source-link">
+      Original source: <a href="{{ post.source_url }}" rel="noopener" target="_blank">{{ post.source_url }}</a>
+    </p>
+    <p><a href="../index.html">&larr; Back to all stories</a></p>
+  </article>
+{% endblock %}

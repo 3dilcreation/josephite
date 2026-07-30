@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% set subpage = false %}
+{% block content %}
+  <section class="intro">
+    <h1>Latest in technology</h1>
+    <p>Auto-curated from {{ categories|length }} topic areas · last updated {{ generated_at.strftime('%B %d, %Y %H:%M UTC') }}</p>
+  </section>
+
+  {% for category in categories %}
+    {% set cat_posts = posts | selectattr('category', 'equalto', category.name) | list %}
+    {% if cat_posts %}
+    <section class="category-block">
+      <div class="cat-head">
+        <h2><a href="category/{{ category.slug }}.html">{{ category.name }}</a></h2>
+        <p>{{ category.description }}</p>
+      </div>
+      <div class="card-grid">
+        {% for post in cat_posts[:6] %}
+        <article class="card">
+          <span class="badge">{{ post.category }}</span>
+          <h3><a href="posts/{{ post.slug }}.html">{{ post.title }}</a></h3>
+          <p class="excerpt">{{ post.summary }}</p>
+          <p class="meta">{{ post.published | dateformat }} · {{ post.source }}</p>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  {% endfor %}
+{% endblock %}

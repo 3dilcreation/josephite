@@ -1,39 +1,127 @@
-# josephite
+# Tech SEI — Automated Tech Blog Builder
 
-**Importing Libraries:**
+Tech SEI builds a tech blog **automatically**. It pulls current tech news, the
+latest innovations, and future research from configurable sources, turns each
+story into a blog article, and publishes a clean static website — ready to host
+on GitHub Pages or anywhere else.
 
-numpy and pandas are libraries for numerical and data analysis, respectively.
-train_test_split is a function from sklearn.model_selection used for splitting data into training and testing sets.
-LinearRegression is a class from sklearn.linear_model for performing linear regression.
-mean_squared_error and r2_score are functions from sklearn.metrics used for evaluating the performance of regression models.
+It runs on a schedule (daily by default) so the blog keeps itself up to date
+with zero manual effort.
 
-**Loading Data:**
+> _Looking for the original linear-regression demo? See
+> [`docs/ml-demo.md`](docs/ml-demo.md)._
 
-data = pd.read_csv(csv_file_path) reads the data from a CSV file into a pandas DataFrame.
-print("Column names:", data.columns) prints out the column names of the DataFrame.
+---
 
-**Preparing Data:**
+## Features
 
-X contains the input features for the model, which are 'AT' (Temperature), 'AP' (Ambient Pressure), 'RH' (Relative Humidity), and 'V' (Exhaust Vacuum).
-y contains the target variable, which is 'PE' (Energy Output).
-train_test_split function splits the data into training and testing sets. Here, 80% of the data is used for training (X_train and y_train) and 20% for testing (X_test and y_test).
+- **Multi-source aggregation** — RSS/Atom feeds (Ars Technica, The Verge,
+  TechCrunch, Wired, MIT Tech Review, IEEE Spectrum, Hacker News…) plus the
+  **arXiv API** for fresh research papers.
+- **Three content sections out of the box** — *Tech News*, *Latest
+  Innovations*, and *Future Research*. Fully configurable in `feeds.yaml`.
+- **AI-written articles (optional)** — with an `ANTHROPIC_API_KEY`, posts are
+  written as original, well-structured articles by the Claude API. Without a
+  key, it falls back to clean **extractive summaries** — so it always works.
+- **Static site generation** — responsive dark-themed HTML, per-category
+  pages, individual article pages, Markdown source for every post, and an RSS
+  feed for the whole blog.
+- **Zero-touch automation** — a GitHub Actions workflow rebuilds and deploys
+  the blog daily.
 
-**Training the Model:**
+---
 
-A linear regression model is initialized using LinearRegression() and then trained on the training data using model.fit(X_train, y_train).
+## Quick start
 
-**Making Predictions:**
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
 
-Predictions are made on the testing data using model.predict(X_test).
+# 2. (Optional) enable AI-written articles
+export ANTHROPIC_API_KEY=sk-ant-...
 
-**Evaluating Model Performance:**
+# 3. Build the blog
+python -m techsei build
 
-Mean Squared Error (MSE) and Coefficient of Determination (R²) are calculated to evaluate how well the model fits the data.
-MSE measures the average squared difference between the actual and predicted values.
-R² represents the proportion of the variance in the dependent variable that is predictable from the independent variables.
-The calculated MSE and R² are then printed out.
+# 4. Preview it locally (builds, then serves at http://localhost:8000)
+python -m techsei serve
+```
 
-**Feature Importance:**
+The generated site is written to `site/` (open `site/index.html`).
 
-The coefficients of the linear regression model represent the importance of each feature in predicting the target variable.
-These coefficients are printed out along with the corresponding feature names to show how each feature contributes to the prediction.
+### CLI commands
+
+| Command | Description |
+| --- | --- |
+| `python -m techsei build` | Collect sources, generate posts, publish the site. |
+| `python -m techsei build --limit 4` | Cap the number of posts generated. |
+| `python -m techsei serve --port 8000` | Build, then preview locally. |
+| `python -m techsei sources` | List the configured content sources. |
+| `python -m techsei build --config my.yaml` | Use a custom config file. |
+
+---
+
+## Configuration
+
+Everything lives in [`feeds.yaml`](feeds.yaml):
+
+- **`site`** — title, tagline, author, output directory, posts-per-run.
+- **`generation`** — `ai`, `extractive`, or `auto` (uses AI when a key is
+  present); plus the Claude model and token budget.
+- **`categories`** — each becomes a blog section. Add any RSS/Atom URL, or use
+  `arxiv:<category>` (e.g. `arxiv:cs.AI`) to pull research papers.
+
+```yaml
+categories:
+  - name: "Future Research"
+    slug: "research"
+    description: "Papers and ideas shaping the next decade."
+    feeds:
+      - arxiv:cs.AI
+      - arxiv:cs.LG
+```
+
+---
+
+## Automated publishing (GitHub Pages)
+
+The workflow at [`.github/workflows/build-blog.yml`](.github/workflows/build-blog.yml)
+rebuilds the blog **daily at 06:00 UTC** (and on demand) and deploys it to
+GitHub Pages.
+
+To enable it:
+
+1. Repo **Settings → Pages → Source: GitHub Actions**.
+2. _(Optional)_ add an `ANTHROPIC_API_KEY` repository secret to turn on
+   AI-written articles.
+3. That's it — the blog publishes itself on schedule. Trigger a manual run any
+   time from the **Actions** tab ("Build Tech SEI Blog" → *Run workflow*).
+
+---
+
+## How it works
+
+```
+feeds.yaml ─▶ sources.py ─▶ generator.py ─▶ publisher.py ─▶ site/
+            (RSS + arXiv)   (AI / summary)   (HTML+RSS+MD)
+```
+
+| Module | Responsibility |
+| --- | --- |
+| `techsei/config.py` | Load and validate `feeds.yaml`. |
+| `techsei/sources.py` | Fetch & normalise stories from RSS and arXiv. |
+| `techsei/generator.py` | Turn a story into a finished post (AI or extractive). |
+| `techsei/markdown.py` | Dependency-free Markdown → HTML rendering. |
+| `techsei/publisher.py` | Render the static site, RSS feed, and Markdown archive. |
+| `techsei/pipeline.py` | Orchestrates collect → generate → publish. |
+| `techsei/cli.py` | Command-line interface. |
+
+---
+
+## Notes
+
+- The engine never crashes on a single bad/unreachable feed — it logs and moves
+  on, so a flaky source won't break a build.
+- AI generation is grounded in the fetched source material and falls back to an
+  extractive summary if the API is unavailable.
+- `site/` is git-ignored; the published output is produced by CI.

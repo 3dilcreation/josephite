@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set subpage = true %}
+{% block title %}{{ category.name }} · {{ site.title }}{% endblock %}
+{% block content %}
+  <section class="intro">
+    <h1>{{ category.name }}</h1>
+    <p>{{ category.description }}</p>
+  </section>
+  <div class="card-grid">
+    {% for post in posts %}
+    <article class="card">
+      <span class="badge">{{ post.category }}</span>
+      <h3><a href="../posts/{{ post.slug }}.html">{{ post.title }}</a></h3>
+      <p class="excerpt">{{ post.summary }}</p>
+      <p class="meta">{{ post.published | dateformat }} · {{ post.source }}</p>
+    </article>
+    {% else %}
+    <p>No articles yet in this category.</p>
+    {% endfor %}
+  </div>
+{% endblock %}

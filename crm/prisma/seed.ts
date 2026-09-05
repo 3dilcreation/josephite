@@ -129,6 +129,48 @@ async function main() {
     },
   });
 
+  // Rate tables. Densities are the published figures for each polymer; costs
+  // and throughputs are plausible Indian-market starting points meant to be
+  // replaced with your own once you have measured them.
+  const materialSeeds = [
+    { name: "PLA — Black", technology: "FDM" as const, densityGramsPerCm3: 1.24, costPerGram: 1.4, stockGrams: 4000, reorderLevelGrams: 1000, colour: "Black" },
+    { name: "PETG-CF", technology: "FDM" as const, densityGramsPerCm3: 1.3, costPerGram: 3.2, stockGrams: 2000, reorderLevelGrams: 750, colour: "Black" },
+    { name: "ABS — White", technology: "FDM" as const, densityGramsPerCm3: 1.04, costPerGram: 1.6, stockGrams: 1500, reorderLevelGrams: 500, colour: "White" },
+    { name: "Standard resin — Grey", technology: "SLA" as const, densityGramsPerCm3: 1.1, costPerGram: 4.5, stockGrams: 3000, reorderLevelGrams: 1000, colour: "Grey" },
+    { name: "Tough resin", technology: "SLA" as const, densityGramsPerCm3: 1.15, costPerGram: 7.5, stockGrams: 900, reorderLevelGrams: 1000, colour: "Amber" },
+    { name: "Nylon PA12", technology: "MJF" as const, densityGramsPerCm3: 1.01, costPerGram: 9.0, stockGrams: 6000, reorderLevelGrams: 2000, colour: "Grey" },
+  ];
+
+  for (const material of materialSeeds) {
+    await db.material.upsert({
+      where: { orgId_name: { orgId: org.id, name: material.name } },
+      update: {},
+      create: { orgId: org.id, wastePercent: material.technology === "SLA" ? 15 : 10, ...material },
+    });
+  }
+
+  const machineSeeds = [
+    { name: "Bambu P1S #1", technology: "FDM" as const, model: "P1S", buildXmm: 256, buildYmm: 256, buildZmm: 256, hourlyRate: 55, cm3PerHour: 18 },
+    { name: "Bambu P1S #2", technology: "FDM" as const, model: "P1S", buildXmm: 256, buildYmm: 256, buildZmm: 256, hourlyRate: 55, cm3PerHour: 18 },
+    { name: "Creality K1 Max", technology: "FDM" as const, model: "K1 Max", buildXmm: 300, buildYmm: 300, buildZmm: 300, hourlyRate: 45, cm3PerHour: 14 },
+    { name: "Formlabs Form 3+", technology: "SLA" as const, model: "Form 3+", buildXmm: 145, buildYmm: 145, buildZmm: 185, hourlyRate: 120, cm3PerHour: 6 },
+    { name: "HP MJF 4200 (partner)", technology: "MJF" as const, model: "Jet Fusion 4200", buildXmm: 380, buildYmm: 284, buildZmm: 380, hourlyRate: 450, cm3PerHour: 40 },
+  ];
+
+  for (const machine of machineSeeds) {
+    await db.machine.upsert({
+      where: { orgId_name: { orgId: org.id, name: machine.name } },
+      update: {},
+      create: { orgId: org.id, branchId: hq.id, ...machine },
+    });
+  }
+
+  await db.pricingSetting.upsert({
+    where: { orgId: org.id },
+    update: {},
+    create: { orgId: org.id },
+  });
+
   if ((await db.customer.count({ where: { orgId: org.id } })) === 0) {
     const acme = await db.customer.create({
       data: {

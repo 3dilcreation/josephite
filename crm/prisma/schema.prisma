@@ -169,6 +169,10 @@ model Organization {
   sources      IntegrationSource[]
   activities   Activity[]
   notifications Notification[]
+  materials    Material[]
+  machines     Machine[]
+  quotes       Quote[]
+  pricing      PricingSetting?
 }
 
 model Branch {
@@ -193,6 +197,8 @@ model Branch {
   customers Customer[]
   leads     Lead[]
   orders    Order[]
+  machines  Machine[]
+  quotes    Quote[]
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -235,6 +241,7 @@ model User {
   departments UserDepartment[]
 
   ownedCustomers   Customer[]     @relation("CustomerOwner")
+  createdQuotes    Quote[]
   assignedLeads    Lead[]         @relation("LeadAssignee")
   assignedOrders   Order[]        @relation("OrderAssignee")
   notes            Note[]
@@ -288,6 +295,7 @@ model Customer {
   owner  User?        @relation("CustomerOwner", fields: [ownerId], references: [id])
   leads  Lead[]
   orders Order[]
+  quotes Quote[]
 
   @@index([orgId])
   @@index([orgId, phone])
@@ -328,6 +336,7 @@ model Lead {
   department Department?        @relation(fields: [departmentId], references: [id])
   source     IntegrationSource? @relation(fields: [sourceId], references: [id])
   orders     Order[]
+  quotes     Quote[]
 
   @@unique([sourceId, externalId])
   @@index([orgId, status])
@@ -535,4 +544,158 @@ model WebhookEvent {
   source IntegrationSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
   @@index([sourceId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Quoting, materials and machines
+//
+// These three exist together on purpose: a quote is only as good as the rates
+// behind it, and the same rates are what let an order report a real margin
+// rather than a guess.
+// ---------------------------------------------------------------------------
+
+enum MachineStatus {
+  IDLE
+  PRINTING
+  MAINTENANCE
+  OFFLINE
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Material {
+  id         String          @id @default(cuid())
+  orgId      String
+  name       String
+  technology PrintTechnology
+  brand      String?
+  colour     String?
+  // Density decides grams from volume; cost decides rupees from grams. Both are
+  // per-material because PLA and PA12 differ by more than 2x on each.
+  densityGramsPerCm3 Decimal @db.Decimal(6, 3)
+  costPerGram        Decimal @db.Decimal(10, 4)
+  // Purge, supports that get binned, and the share of prints that fail. Folded
+  // into every quote so the failure rate is priced in rather than absorbed.
+  wastePercent Decimal @default(10) @db.Decimal(5, 2)
+  stockGrams        Decimal @default(0) @db.Decimal(12, 2)
+  reorderLevelGrams Decimal @default(0) @db.Decimal(12, 2)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  quotes Quote[]
+
+  @@unique([orgId, name])
+  @@index([orgId, technology])
+}
+
+model Machine {
+  id         String          @id @default(cuid())
+  orgId      String
+  branchId   String?
+  name       String
+  technology PrintTechnology
+  model      String?
+  buildXmm   Int?
+  buildYmm   Int?
+  buildZmm   Int?
+  // What the machine costs to run for an hour: depreciation, power, and the
+  // share of the operator's time it consumes.
+  hourlyRate Decimal @db.Decimal(10, 2)
+  // Effective throughput at the reference layer height, measured from real jobs
+  // rather than the manufacturer's number.
+  cm3PerHour Decimal @default(15) @db.Decimal(8, 2)
+  referenceLayerMm Decimal @default(0.2) @db.Decimal(5, 3)
+  status    MachineStatus @default(IDLE)
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch Branch?      @relation(fields: [branchId], references: [id])
+  quotes Quote[]
+
+  @@unique([orgId, name])
+  @@index([orgId, technology])
+}
+
+// One row per organisation. The knobs that turn cost into price.
+model PricingSetting {
+  id                 String  @id @default(cuid())
+  orgId              String  @unique
+  setupFee           Decimal @default(250) @db.Decimal(10, 2)
+  minimumCharge      Decimal @default(500) @db.Decimal(10, 2)
+  labourRatePerHour  Decimal @default(250) @db.Decimal(10, 2)
+  postProcessMinutes Int     @default(15)
+  marginPercent      Decimal @default(45) @db.Decimal(5, 2)
+  rushMultiplier     Decimal @default(1.5) @db.Decimal(5, 2)
+  // Above this value a human checks the number before it goes to the customer.
+  reviewThreshold Decimal  @default(25000) @db.Decimal(12, 2)
+  quoteValidDays  Int      @default(15)
+  updatedAt       DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model Quote {
+  id       String @id @default(cuid())
+  orgId    String
+  branchId String?
+  quoteNo  String
+  customerId String?
+  leadId     String?
+
+  // What the uploaded model measured. Kept so a quote can be re-costed later
+  // against different rates without asking the customer to re-send the file.
+  fileName      String
+  fileSizeBytes Int
+  triangleCount Int
+  volumeCm3     Decimal @db.Decimal(12, 4)
+  bboxXmm       Decimal @db.Decimal(10, 2)
+  bboxYmm       Decimal @db.Decimal(10, 2)
+  bboxZmm       Decimal @db.Decimal(10, 2)
+
+  technology    PrintTechnology
+  materialId    String?
+  machineId     String?
+  quantity      Int     @default(1)
+  infillPercent Int     @default(20)
+  layerHeightMm Decimal @default(0.2) @db.Decimal(5, 3)
+  isRush        Boolean @default(false)
+
+  estimatedGrams Decimal @db.Decimal(12, 2)
+  estimatedHours Decimal @db.Decimal(10, 2)
+  materialCost   Decimal @db.Decimal(12, 2)
+  machineCost    Decimal @db.Decimal(12, 2)
+  labourCost     Decimal @db.Decimal(12, 2)
+  setupCost      Decimal @db.Decimal(12, 2)
+  totalCost      Decimal @db.Decimal(12, 2)
+  unitPrice      Decimal @db.Decimal(12, 2)
+  total          Decimal @db.Decimal(12, 2)
+  needsReview    Boolean @default(false)
+
+  status      QuoteStatus @default(DRAFT)
+  validUntil  DateTime?
+  createdById String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch?      @relation(fields: [branchId], references: [id])
+  customer  Customer?    @relation(fields: [customerId], references: [id])
+  lead      Lead?        @relation(fields: [leadId], references: [id])
+  material  Material?    @relation(fields: [materialId], references: [id])
+  machine   Machine?     @relation(fields: [machineId], references: [id])
+  createdBy User?        @relation(fields: [createdById], references: [id])
+
+  @@unique([orgId, quoteNo])
+  @@index([orgId, status])
+  @@index([orgId, createdAt])
 }

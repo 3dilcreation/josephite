@@ -10,6 +10,8 @@ import { canManageUsers } from "@/lib/rbac";
 const MAIN = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/leads", label: "Leads" },
+  { href: "/quote", label: "Instant quote" },
+  { href: "/quotes", label: "Quotes" },
   { href: "/orders", label: "Orders" },
   { href: "/production", label: "Production board" },
   { href: "/customers", label: "Customers" },
@@ -19,6 +21,9 @@ const MAIN = [
 const ADMIN = [
   { href: "/admin/users", label: "Users & roles" },
   { href: "/admin/departments", label: "Departments" },
+  { href: "/admin/materials", label: "Materials" },
+  { href: "/admin/machines", label: "Machines" },
+  { href: "/admin/pricing", label: "Pricing rules" },
   { href: "/admin/branches", label: "Branches & franchises" },
   { href: "/admin/integrations", label: "Integrations" },
 ];

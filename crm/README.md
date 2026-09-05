@@ -76,6 +76,48 @@ Order totals are always **derived** from line items and recorded payments
 status follows from the amounts and the payment due date, so `PARTIAL` and
 `OVERDUE` cannot drift out of sync with reality.
 
+## Instant quoting
+
+Upload an STL at `/quote` and get a costed price in seconds.
+
+The mesh is measured server-side: enclosed volume via a signed-tetrahedron sum
+over the triangles, plus bounding box and surface area. Both binary and ASCII
+STL are read. Every edge of a closed mesh is shared by exactly two triangles, so
+where that does not hold the quote is flagged rather than quietly priced on a
+volume that may be meaningless.
+
+Price is built from your own rate tables, not a guess:
+
+| Component | Source |
+| --- | --- |
+| Material | volume → grams via the material's density, plus its waste allowance, × cost per gram |
+| Machine time | consumed volume ÷ the machine's cm³/hour, scaled by layer height, × hourly rate |
+| Labour | post-processing minutes × labour rate, per part |
+| Setup | a flat fee **per job** — which is what makes fifty pieces cheaper each than one |
+| Margin | your percentage, with a rush multiplier and a minimum charge floor |
+
+Only extrusion processes use infill; a resin or powder part is solid whatever the
+slider says, so the control is disabled for them. Support allowance varies by
+process — powder beds self-support, PolyJet carries a full soluble envelope.
+
+**Be clear about the accuracy.** Print time is estimated from volume and
+throughput, not from a slicer, so expect roughly ±25% against real slicer output
+until each machine's `cm3PerHour` has been calibrated from actual jobs. Material,
+labour and setup are exact against your rate tables. Quotes above the review
+threshold are flagged for a human rather than sent automatically — set that
+threshold on the pricing page.
+
+Accepting a quote opens an order whose line item already carries the material,
+technology, weight and print hours the estimate was based on, which is what will
+later let the order report a real margin instead of a guess.
+
+Rates live under Admin → Materials, Machines and Pricing rules. The geometry and
+pricing maths are covered by tests against shapes with known analytic volumes:
+
+```bash
+npx tsx tests/stl.test.ts
+```
+
 ## Channel integrations
 
 Every channel posts to one endpoint:
@@ -147,4 +189,7 @@ Any Node host with a PostgreSQL database. Before going live:
 ## What is deliberately not here
 
 Read `ROADMAP.md` for the full list with reasoning. The short version: staff
-attendance, e-invoicing, and outbound WhatsApp were scoped out of this build.
+attendance, e-invoicing, outbound WhatsApp, the customer portal and a printer-farm
+dashboard are all still ahead. Uploaded STLs are measured and discarded rather
+than stored — file storage with versioning is on the roadmap, and until it lands
+the CRM keeps the measurements, not the model.

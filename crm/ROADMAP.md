@@ -29,23 +29,19 @@ Three things about the original brief, before the list:
 
 ---
 
+## Built
+
+### Instant file-based quoting · 9/10 — **done**
+STL upload → measured volume, bounding box and watertightness → price from your
+material, machine and pricing tables, with the cost breakdown shown. Accepting a
+quote opens an order carrying the spec forward. Material inventory and machine
+rate tables shipped alongside it, since quoting cannot work without them.
+
+Still to do here: **calibrate `cm3PerHour` per machine against real jobs.** Until
+you do, treat print time as ±25%. Also STEP and 3MF are not read yet — only STL —
+and uploaded files are measured then discarded rather than stored.
+
 ## Tier 1 — build these next
-
-### Instant file-based quoting · 9/10
-Customer uploads an STL or STEP; the system computes bounding box, volume and
-estimated print time, then prices it from your material and machine rates and
-returns a quote in seconds.
-
-This is the single highest-leverage thing you can add. It converts the "send us
-your file and we'll get back to you" delay — where most 3D printing enquiries die —
-into an instant number. It also kills the hours your sales person currently spends
-quoting jobs that were never going to close. Everything else on this list improves
-an existing process; this one changes your conversion rate.
-
-Not trivial: volume from a mesh is easy, *print time* is not, and a naive estimate
-will be wrong enough to lose you money. Start by pricing on volume plus bounding
-box with a manual review step above a value threshold, and calibrate against real
-slicer output over a few months.
 
 ### True job costing and per-order margin · 9/10
 Machine hours × machine rate + material grams × material cost + labour +
@@ -54,8 +50,10 @@ and per customer.
 
 You are probably already carrying at least one customer who feels like a good
 account and is actually unprofitable once failed prints and rework are counted.
-The schema already stores `weightGrams` and `printHours` per line item; this is
-mostly rate tables and reporting on data you are collecting.
+Most of the groundwork is now in place: line items store `weightGrams` and
+`printHours`, quotes store the estimated cost, and the material and machine rate
+tables exist. What remains is recording *actual* consumption against the estimate
+and reporting the variance — which is where the real lesson is.
 
 ### SLA timers and automatic escalation · 8/10
 "No contact within 4 hours" → notify the manager. "Order due in 24 hours and still
@@ -73,19 +71,18 @@ WhatsApp Business API provider and pre-approved message templates.
 Cuts "where is my order?" calls sharply, and every one of those calls currently
 interrupts someone on the shop floor.
 
-### Material inventory · 8/10
-Spool and resin bottle tracking with gram-level consumption deducted as jobs
-complete, plus low-stock alerts and per-batch cost.
+### Material inventory — **partly done**
+Materials now carry density, cost per gram, waste allowance, stock in grams and a
+reorder level, with low-stock warnings on the quote itself and on the materials
+page. What is missing is **automatic deduction when a job completes** and per-spool
+batch tracking; stock is adjusted by hand today. Finishing this is 8/10 and is a
+prerequisite for honest job costing.
 
-You cannot cost a job honestly without it, and running out of a specific filament
-mid-batch is a deadline-missing event. Pairs directly with job costing.
-
-### Machine registry and capacity planning · 8/10
-Every printer as a record with technology, build volume, hourly rate and status.
-Assign jobs to machines; see utilisation and where the queue is jammed.
-
-Answers "can we take this rush job?" with a fact instead of a guess, and tells you
-which printer is actually earning its keep before you buy another one.
+### Machine capacity planning — **registry done, planning not**
+Machines exist with technology, build volume, hourly rate, throughput and status,
+and quotes check whether a part fits the build envelope. Still missing: assigning
+jobs to machines, a queue, and utilisation reporting. That remainder is 8/10 —
+it is what answers "can we take this rush job?" with a fact.
 
 ### GST invoicing and e-invoicing · 8/10
 Invoice PDFs with your GSTIN, HSN codes, correct CGST/SGST/IGST split, and IRN

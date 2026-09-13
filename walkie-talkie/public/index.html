@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1117" />
+  <title>Nearby PTT</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <div class="identity">
+      <span class="dot" id="signal-dot" title="signalling link"></span>
+      <input id="name" class="name-input" maxlength="18" placeholder="your name" />
+      <span class="channel">#<input id="channel" class="channel-input" maxlength="16" value="main" /></span>
+    </div>
+    <button id="settings-toggle" class="ghost" aria-expanded="false">Settings</button>
+  </header>
+
+  <section id="settings" class="settings" hidden>
+    <label class="row">
+      <span>Transcription engine</span>
+      <select id="stt-provider">
+        <option value="webspeech">Web Speech (needs network on most builds)</option>
+        <option value="whisper">Whisper tiny — on device, fully offline</option>
+      </select>
+    </label>
+    <label class="row">
+      <span>Always attach a transcript</span>
+      <input type="checkbox" id="always-transcribe" checked />
+    </label>
+    <div class="row">
+      <span>Offline voice pack</span>
+      <button id="download-voice-pack" class="ghost">Download (~40 MB)</button>
+    </div>
+    <p class="hint" id="voice-pack-status">
+      Fetch this once while you still have a connection. After that transcription
+      runs entirely on the phone.
+    </p>
+  </section>
+
+  <section class="status">
+    <div class="tier" id="tier-badge" data-tier="red">
+      <strong id="tier-label">NO LINK</strong>
+      <span id="tier-detail">looking for peers…</span>
+    </div>
+    <ul class="peers" id="peers"></ul>
+  </section>
+
+  <main class="log" id="log" aria-live="polite"></main>
+
+  <div class="interim" id="interim" hidden></div>
+
+  <footer class="controls">
+    <button id="ptt" class="ptt">
+      <span class="ptt-label">HOLD TO TALK</span>
+      <span class="ptt-mode" id="ptt-mode"></span>
+    </button>
+    <form class="compose" id="compose">
+      <input id="text-input" placeholder="or type a message" maxlength="500" autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
+  </footer>
+
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

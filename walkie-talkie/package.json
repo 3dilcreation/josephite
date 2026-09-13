@@ -1,0 +1,18 @@
+{
+  "name": "nearby-ptt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline-first push-to-talk PWA for nearby devices on a shared Wi-Fi/hotspot, with adaptive voice-to-text-to-voice degradation.",
+  "scripts": {
+    "start": "node server/index.js",
+    "certs": "bash scripts/gen-certs.sh",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

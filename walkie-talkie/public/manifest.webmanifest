@@ -1,0 +1,13 @@
+{
+  "name": "Nearby PTT",
+  "short_name": "PTT",
+  "description": "Push-to-talk with nearby devices over local Wi-Fi, with automatic fallback to on-device transcription when the link is too weak for audio.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

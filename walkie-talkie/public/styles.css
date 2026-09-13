@@ -1,0 +1,247 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --line: #26303d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --green: #3fb950;
+  --amber: #d29922;
+  --red: #f85149;
+  --accent: #58a6ff;
+}
+
+* { box-sizing: border-box; }
+
+/* Author styles outrank the user-agent rule for [hidden], and .settings sets a
+   display of its own -- so the attribute has to be honoured explicitly. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  overscroll-behavior: none;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(10px, env(safe-area-inset-top)) 14px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--red); flex: none;
+  transition: background .2s;
+}
+.dot[data-state="open"] { background: var(--green); }
+.dot[data-state="connecting"] { background: var(--amber); }
+
+.name-input, .channel-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--line);
+  color: var(--text);
+  font: inherit;
+  padding: 2px 0;
+  min-width: 0;
+}
+.name-input { width: 8ch; font-weight: 600; }
+.channel-input { width: 6ch; color: var(--accent); }
+.name-input:focus, .channel-input:focus { outline: none; border-bottom-color: var(--accent); }
+.channel { color: var(--muted); }
+
+.ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.ghost:hover { color: var(--text); border-color: var(--accent); }
+
+.settings {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  display: grid;
+  gap: 10px;
+}
+.settings .row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings .row > span { flex: 1; min-width: 0; }
+.settings select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  font: inherit;
+  flex: 1 1 55%;
+  min-width: 0;
+  max-width: 55%;
+}
+.hint { margin: 0; color: var(--muted); font-size: 13px; }
+
+.status { padding: 12px 14px 4px; }
+
+.tier {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.tier strong { letter-spacing: .08em; font-size: 13px; }
+.tier span { color: var(--muted); font-size: 13px; }
+.tier[data-tier="green"] { border-color: color-mix(in srgb, var(--green) 55%, transparent); }
+.tier[data-tier="green"] strong { color: var(--green); }
+.tier[data-tier="amber"] { border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+.tier[data-tier="amber"] strong { color: var(--amber); }
+.tier[data-tier="red"] { border-color: color-mix(in srgb, var(--red) 55%, transparent); }
+.tier[data-tier="red"] strong { color: var(--red); }
+
+.peers {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.peers li {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.peers li[data-tier="green"] { color: var(--green); }
+.peers li[data-tier="amber"] { color: var(--amber); }
+.peers li[data-tier="red"] { color: var(--red); }
+
+.log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.entry {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel);
+}
+.entry[data-kind="audio"] { border-left-color: var(--green); }
+.entry[data-kind="voice-as-text"] { border-left-color: var(--amber); }
+.entry[data-kind="text"] { border-left-color: var(--accent); }
+.entry[data-kind="system"] { border-left-color: var(--muted); color: var(--muted); font-size: 13px; }
+.entry[data-mine="true"] { background: #11202e; }
+
+.entry-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.entry-head b { color: var(--text); font-weight: 600; }
+.entry-body { white-space: pre-wrap; word-break: break-word; }
+.badge {
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.interim {
+  margin: 0 14px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.controls {
+  padding: 10px 14px max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  display: grid;
+  gap: 10px;
+}
+
+.ptt {
+  width: 100%;
+  min-height: 96px;
+  border-radius: 14px;
+  border: 2px solid var(--line);
+  background: #1c2430;
+  color: var(--text);
+  font: 600 18px/1.2 inherit;
+  letter-spacing: .06em;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  place-content: center;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform .06s, background .12s, border-color .12s;
+}
+.ptt:active, .ptt[data-live="true"] { transform: scale(.985); }
+.ptt[data-live="true"][data-mode="stream"] { background: #12301c; border-color: var(--green); }
+.ptt[data-live="true"][data-mode="clip"] { background: #30290f; border-color: var(--amber); }
+.ptt[data-live="true"][data-mode="transcribe"] { background: #301414; border-color: var(--red); }
+.ptt-mode { font-size: 12px; font-weight: 400; letter-spacing: .04em; color: var(--muted); }
+
+.compose { display: flex; gap: 8px; }
+.compose input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 10px;
+  font: inherit;
+  min-width: 0;
+}
+.compose input:focus { outline: none; border-color: var(--accent); }
+.compose button {
+  background: var(--accent);
+  color: #06121f;
+  border: none;
+  border-radius: 8px;
+  padding: 0 16px;
+  font: 600 15px inherit;
+  cursor: pointer;
+}
+
+@media (min-width: 720px) {
+  body { max-width: 720px; margin: 0 auto; border-inline: 1px solid var(--line); }
+}

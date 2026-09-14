@@ -7,12 +7,16 @@
   "scripts": {
     "start": "node server/index.js",
     "certs": "bash scripts/gen-certs.sh",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node --test --test-concurrency=1 test/e2e/*.test.js"
   },
   "dependencies": {
     "ws": "^8.18.0"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.1"
   }
 }

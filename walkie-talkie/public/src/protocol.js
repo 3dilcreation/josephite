@@ -18,6 +18,10 @@ export const TYPE = {
   AUDIO_START: 0x10,
   AUDIO_CHUNK: 0x11,
   AUDIO_END: 0x12,
+  // Sent when a transmission is given up on mid-flight, so the receiver can
+  // release what it has already buffered instead of waiting for an end that is
+  // never coming.
+  AUDIO_ABORT: 0x13,
   TEXT: 0x20,
   VOICE_AS_TEXT: 0x21,
   ACK: 0x30,

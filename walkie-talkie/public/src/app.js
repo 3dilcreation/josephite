@@ -137,6 +137,9 @@ function start() {
   mesh.addEventListener('audio-chunk', (e) => {
     player.feedLive(e.detail.id, e.detail.seq, e.detail.chunk);
   });
+  mesh.addEventListener('audio-abort', (e) => {
+    player.abortLive(e.detail.id);
+  });
   mesh.addEventListener('audio-end', (e) => {
     const { name, meta, blob, id } = e.detail;
     const wasLive = player.endLive(id);
@@ -165,6 +168,10 @@ function start() {
   }
 
   mesh.connect();
+  // Exposed for the browser tests, which need to perturb the link grade and
+  // inspect what the receiver is holding on to.
+  globalThis.__mesh = mesh;
+  globalThis.__player = player;
   system(`joined #${settings.channel} as ${settings.name}`);
 
   ptt = new PushToTalk({

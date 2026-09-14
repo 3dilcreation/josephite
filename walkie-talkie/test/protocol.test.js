@@ -81,3 +81,14 @@ test('dedupe keys still collapse a genuinely repeated frame', () => {
   bumpHops(relayed); // a relay changes the hop count but not the identity
   assert.equal(dedupeKey(decode(once)), dedupeKey(decode(relayed)));
 });
+
+test('an abort is distinguishable from the transmission it retracts', () => {
+  // The retraction deliberately reuses the transmission's id so the receiver can
+  // match it to the buffer it is holding; only the type separates them.
+  const id = randomId();
+  const start = decode(encode({ type: TYPE.AUDIO_START, id }));
+  const abort = decode(encode({ type: TYPE.AUDIO_ABORT, id }));
+
+  assert.equal(idToHex(start.id), idToHex(abort.id));
+  assert.notEqual(dedupeKey(start), dedupeKey(abort));
+});

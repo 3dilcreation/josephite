@@ -128,6 +128,12 @@ export class PushToTalk extends EventTarget {
     };
 
     if (session.profile.mode === 'transcribe' || collapsed) {
+      // Anything already on the wire has to be retracted first. Without this the
+      // receiver holds the partial clip and its media element forever, so every
+      // walk out of range leaks a little more.
+      if (session.sentStart) {
+        this.mesh.broadcast(encode({ type: TYPE.AUDIO_ABORT, id: session.id, meta: { from: meta.from } }));
+      }
       if (!transcript) {
         this.#emit('warn', {
           message: collapsed

@@ -253,7 +253,7 @@ export class Mesh extends EventTarget {
     if (this.seen.has(key)) return;
     this.#remember(key);
 
-    if (frame.type === TYPE.AUDIO_CHUNK || frame.type === TYPE.AUDIO_START || frame.type === TYPE.AUDIO_END) {
+    if ([TYPE.AUDIO_CHUNK, TYPE.AUDIO_START, TYPE.AUDIO_END, TYPE.AUDIO_ABORT].includes(frame.type)) {
       this.#onAudioFrame(peer, frame);
     } else if (frame.type === TYPE.TEXT || frame.type === TYPE.VOICE_AS_TEXT) {
       this.#emit('message', {
@@ -286,6 +286,12 @@ export class Mesh extends EventTarget {
     }
     const entry = peer.inbox.get(idHex);
     if (!entry) return;
+
+    if (frame.type === TYPE.AUDIO_ABORT) {
+      peer.inbox.delete(idHex);
+      this.#emit('audio-abort', { from: peer.id, id: idHex });
+      return;
+    }
 
     if (frame.type === TYPE.AUDIO_CHUNK) {
       entry.chunks.push(frame.payload);

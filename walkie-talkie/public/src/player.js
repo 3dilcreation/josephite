@@ -12,6 +12,12 @@
 
 import { speak } from './tts.js';
 
+// Ceiling on how long one queued item may hold the channel. Speech synthesis
+// that never reports completion -- a device with no installed voice, a page
+// backgrounded mid-utterance -- would otherwise wedge the queue permanently and
+// the user would simply stop hearing anyone.
+const MAX_ITEM_MS = 30_000;
+
 export class Player {
   constructor() {
     this.queue = [];
@@ -25,8 +31,9 @@ export class Player {
 
     const audio = new Audio();
     const mediaSource = new MediaSource();
-    audio.src = URL.createObjectURL(mediaSource);
-    const entry = { audio, mediaSource, buffer: null, pending: [], failed: false, nextSeq: 0, jitter: new Map() };
+    const url = URL.createObjectURL(mediaSource);
+    audio.src = url;
+    const entry = { audio, mediaSource, url, buffer: null, pending: [], failed: false, nextSeq: 0, jitter: new Map() };
     this.live.set(id, entry);
 
     mediaSource.addEventListener('sourceopen', () => {
@@ -65,12 +72,30 @@ export class Player {
     const entry = this.live.get(id);
     if (!entry) return false;
     this.live.delete(id);
-    if (entry.failed) return false;
+    // The element keeps the blob URL alive until it has finished playing out
+    // what was appended, so revoking waits for the end of playback.
+    entry.audio.addEventListener('ended', () => URL.revokeObjectURL(entry.url), { once: true });
+    if (entry.failed) { URL.revokeObjectURL(entry.url); return false; }
     try {
       if (entry.mediaSource.readyState === 'open' && !entry.buffer?.updating) {
         entry.mediaSource.endOfStream();
       }
     } catch { /* already torn down */ }
+    return true;
+  }
+
+  // The sender gave up on this transmission, so nothing further is coming and
+  // what has arrived is a fragment. Release it rather than playing half a word.
+  abortLive(id) {
+    const entry = this.live.get(id);
+    if (!entry) return false;
+    this.live.delete(id);
+    entry.pending.length = 0;
+    entry.jitter.clear();
+    try { entry.audio.pause(); } catch { /* never started */ }
+    entry.audio.removeAttribute('src');
+    entry.audio.load();
+    URL.revokeObjectURL(entry.url);
     return true;
   }
 
@@ -97,11 +122,16 @@ export class Player {
     if (this.playing || !this.queue.length) return;
     const item = this.queue.shift();
     this.playing = true;
+    let settled = false;
     const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(watchdog);
       this.playing = false;
       item.onend();
       this.#next();
     };
+    const watchdog = setTimeout(finish, MAX_ITEM_MS);
 
     item.onstart();
     if (item.text !== undefined) {

@@ -66,7 +66,16 @@ The server only introduces peers to each other. Once two browsers have shaken
 hands, every frame goes directly between them — you can kill the server and the
 conversation keeps working.
 
-`npm test` runs the protocol and link-grading tests (18 of them, all passing).
+`npm test` runs the protocol and link-grading unit tests (19, no browser needed).
+
+`npm run test:e2e` drives two real browser peers against a real server — real
+WebRTC, real MediaRecorder — and checks what actually crosses the gap in each
+condition. Only the two speech engines are doubles, because headless Chromium
+ships neither a recogniser nor an audio output; everything between the
+microphone and the far end's speaker is the real implementation. It covers a
+clear link carrying audio, a poor link carrying the transcript and speaking it
+at the far end, a link collapsing mid-sentence, and the retraction of the
+partial audio that collapse leaves behind.
 
 ### Demoing the degraded path
 
@@ -100,7 +109,7 @@ and measured goodput, and maps the grade to a transmit profile:
 | WEAK | < 700 ms, < 20% loss, > 1.2 kB/s | 10 kbps Opus, 1 s slices, played on release |
 | POOR | anything worse | transcribed on device, sent as text, spoken at the far end |
 
-Two details that took a bug each to get right:
+Three details that took a bug each to get right:
 
 - **An unmeasured link is not a slow one.** Grading a fresh peer's unknown
   goodput as zero pinned it to POOR, so it never sent audio, so goodput stayed
@@ -108,6 +117,12 @@ Two details that took a bug each to get right:
   fourth ping carries 8 KB of padding so a real sample arrives within seconds.
 - **Grades are hysteretic**, and fall faster than they rise (2 samples down, 4
   up). A grade that flaps mid-sentence costs a codec restart at both ends.
+
+- **A collapse has to retract what it already sent.** By the time the grade
+  drops mid-hold, audio frames are on the wire and the receiver is assembling a
+  clip. Switching to text without an `AUDIO_ABORT` left that buffer and its
+  media element allocated forever, so every walk out of range leaked a little
+  more.
 
 Frames relay up to 4 hops, deduplicated by `(type, message id, sequence)`.
 Keying that on the message id alone silently swallowed every `AUDIO_END`,
@@ -141,10 +156,14 @@ joke, so the honest recommendation is to fetch the pack before you need it.
   phones that have never met cannot find each other with the server down.
 - **No store-and-forward yet.** A message to a peer who is out of range is lost,
   not carried until they reappear.
-- Transcription accuracy, speech synthesis and audio playback were not verified
-  here — the headless browser used for testing has no speech engine and no audio
-  output. The transport, the grading and the fallback switching were all
-  verified end to end between two real browser peers.
+- **Transcription accuracy is unverified.** The end-to-end tests prove the whole
+  chain — capture, grading, the decision at release, delivery, and speaking the
+  result at the far end — but they drive it through stand-in speech engines. How
+  well whisper-tiny actually understands you on a windy hillside is a separate
+  question, and this repository has no evidence about it.
+- **Audible playback is unverified.** The test browser has no audio output, so
+  what was checked is that the right bytes and the right utterances reach the
+  right places, not that they sound correct.
 
 ## Layout
 
@@ -157,4 +176,6 @@ public/src/ptt.js        dual-path capture and the release-time decision
 public/src/stt.js        pluggable transcription (Web Speech / whisper)
 public/src/tts.js        speech synthesis, stable voice per peer
 public/src/player.js     live MSE playback with a clip-queue fallback
+test/                    protocol and link-grading unit tests
+test/e2e/                two real browser peers against a real server
 ```
